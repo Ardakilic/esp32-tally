@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Tally Counter — pocket tally counter, 3D-printed case</title>
+<style>
+  :root { --bg: #14171c; --panel: #1e232b; --ink: #e8eaee; --muted: #9aa3b0;
+           --accent: #35b8a5; --line: #313945; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); padding: 40px 20px;
+          font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 30px; } h1 span { color: var(--accent); }
+  .tagline { color: var(--muted); margin: 6px 0 8px; }
+  .top a { color: var(--accent); }
+  .grid { display: grid; gap: 18px; margin-top: 28px;
+           grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  article { background: var(--panel); border: 1px solid var(--line);
+             border-radius: 14px; padding: 16px; }
+  article img { width: 100%; border-radius: 8px; background: #fff; }
+  article h2 { font-size: 17px; margin: 12px 0 4px; }
+  .geo { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  .btn { display: inline-block; background: var(--accent); color: #08201c;
+          font-weight: 600; text-decoration: none; padding: 8px 14px;
+          border-radius: 8px; font-size: 14px; }
+  details { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  details a, ul.links a { color: var(--ink); }
+  details li, ul.links li { margin: 3px 0 3px 18px; word-break: break-all; }
+  ul.links { font-size: 13px; color: var(--muted); }
+  footer { color: var(--muted); font-size: 13px; margin-top: 32px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1><span>ESP32 Tally Counter</span> — pocket tally counter</h1>
+    <p class="tagline">Two buttons, a 0.91" OLED, an ESP32-C3 Super Mini and a
+      1000 mAh LiPo in a 58 × 58 × 22 mm 3D-printed case.
+      Plain and ESPHome firmwares. Open source, generated from one script.</p>
+    <p><a href="https://github.com/Ardakilic/esp32-tally">Source, build guide &amp; README on GitHub</a></p>
+  </div>
+  <div class="grid">
+  <article>
+    <a href="case/docs/renders.png"><img loading="lazy" src="case/docs/renders.png"
+         alt="Renders of the tally counter case, closed and exploded"></a>
+    <h2>Case</h2>
+    <p class="geo">58.0 × 58.4 × 22.1 mm closed ·
+       friction-fit lid · 4 parts, no supports</p>
+    <p><a class="btn" href="case/preview.html">Interactive 3D preview</a></p>
+    <details open><summary>STL downloads</summary><ul><li><a href="case/stl/tally-base.stl">tally-base.stl</a> (30 kB)</li><li><a href="case/stl/tally-lid.stl">tally-lid.stl</a> (50 kB)</li><li><a href="case/stl/tally-cap-plus.stl">tally-cap-plus.stl</a> (41 kB)</li><li><a href="case/stl/tally-cap-minus.stl">tally-cap-minus.stl</a> (39 kB)</li></ul></details>
+  </article>
+  <article>
+    <a href="case/docs/perfboard-layout.png"><img loading="lazy" src="case/docs/perfboard-layout.png"
+         alt="Perfboard layout with every component, pin name and wire"></a>
+    <h2>Build it</h2>
+    <p class="geo">18 × 20-hole perfboard · ESP32-C3 Super Mini · SSD1306 128 × 32 ·
+       TP4056 · 503450 LiPo</p>
+    <ul class="links">
+      <li><a href="case/docs/perfboard-layout.png">Perfboard layout</a></li>
+      <li><a href="case/docs/wiring.png">Wiring block schematic</a></li>
+      <li><a href="https://github.com/Ardakilic/esp32-tally#bill-of-materials">Bill of materials, wiring table, assembly (README)</a></li>
+    </ul>
+  </article>
+  <article>
+    <a href="case/docs/wiring.png"><img loading="lazy" src="case/docs/wiring.png"
+         alt="Wiring block schematic: power path and signals"></a>
+    <h2>Firmware</h2>
+    <p class="geo">Same behaviour in both: click counts on release, hold both to
+       reset, 60 s idle → deep sleep, count kept in flash</p>
+    <ul class="links">
+      <li><a href="https://github.com/Ardakilic/esp32-tally/tree/main/firmware/plain">firmware/plain/</a> — PlatformIO + Arduino, no radio</li>
+      <li><a href="https://github.com/Ardakilic/esp32-tally/tree/main/firmware/esphome">firmware/esphome/</a> — ESPHome, Home Assistant entities</li>
+      <li><a href="https://github.com/Ardakilic/esp32-tally#flashing">Flashing from the browser (README)</a></li>
+    </ul>
+  </article>
+  </div>
+  <footer>Code: MIT · Models &amp; images: CC BY 4.0 ·
+    <a href="https://github.com/Ardakilic/esp32-tally">github.com/Ardakilic/esp32-tally</a></footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Tally Counter — case preview</title>
+<style>
+  :root {
+    --bg: #14171c; --panel: #1e232bee; --ink: #e8eaee; --muted: #9aa3b0;
+    --accent: #35b8a5; --line: #313945;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { background: var(--bg); color: var(--ink);
+         font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  canvas { display: block; }
+  #ui { position: fixed; top: 14px; left: 14px; width: 250px;
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(8px); }
+  h1 { font-size: 15px; margin-bottom: 2px; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  #home { display: inline-block; color: var(--muted); text-decoration: none;
+          font-size: 12px; margin-bottom: 8px; }
+  #home:hover { color: var(--accent); }
+  label.row { display: flex; align-items: center; gap: 8px; margin: 7px 0;
+              cursor: pointer; user-select: none; }
+  input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+  .slider { margin: 12px 0 4px; }
+  .slider span { display: flex; justify-content: space-between;
+                 color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  #dims { position: fixed; right: 14px; bottom: 14px; max-width: 320px;
+          background: var(--panel); border: 1px solid var(--line);
+          border-radius: 12px; padding: 12px 16px; font-size: 12.5px; }
+  #dims b { color: var(--accent); }
+  #dims div { margin: 3px 0; color: var(--muted); }
+  #dims div strong { color: var(--ink); font-weight: 600; }
+  #hint { position: fixed; left: 14px; bottom: 14px; color: var(--muted);
+          font-size: 12px; }
+  #parts { margin-top: 12px; border-top: 1px solid var(--line);
+           padding-top: 10px; }
+  #parts b { color: var(--accent); font-size: 12px; }
+  #parts .file { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                 font-size: 10.5px; word-break: break-all; margin: 4px 0; }
+  #parts .file a { color: var(--ink); text-decoration: underline;
+                   text-decoration-color: var(--line); }
+  #parts .file a:hover { color: var(--accent); }
+  @media (max-width: 640px) {
+    #ui { width: 210px; } #dims { display: none; } #hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="ui">
+  <a id="home" href="../index.html">&larr; Project page</a>
+  <h1 id="title">ESP32 Tally Counter</h1>
+  <div class="sub" id="subtitle">case preview</div>
+  <div class="slider">
+    <span><em>Explode</em><em id="exval">0 mm</em></span>
+    <input id="explode" type="range" min="0" max="60" value="0" step="1">
+  </div>
+  <label class="row"><input id="show-base" type="checkbox" checked> Show base</label>
+  <label class="row"><input id="show-lid" type="checkbox" checked> Show lid</label>
+  <label class="row"><input id="show-cap-plus" type="checkbox" checked> Show cap "+"</label>
+  <label class="row"><input id="show-cap-minus" type="checkbox" checked> Show cap "&minus;"</label>
+  <label class="row"><input id="xray-lid" type="checkbox"> X-ray lid</label>
+  <label class="row"><input id="show-ghosts" type="checkbox" checked> Ghost electronics</label>
+  <label class="row"><input id="spin" type="checkbox" checked> Auto-rotate</label>
+  <div id="parts"></div>
+</div>
+<div id="dims"></div>
+<div id="hint">drag&nbsp;·&nbsp;rotate&nbsp;&nbsp;|&nbsp;&nbsp;wheel&nbsp;·&nbsp;zoom&nbsp;&nbsp;|&nbsp;&nbsp;shift-drag&nbsp;·&nbsp;pan</div>
+
+<!-- three.js ES-module build (split in two files since r167), base64-embedded
+     so the page works offline; loaded via blob dynamic imports, with the
+     module's relative `./three.core[.min].js` specifier patched to the core's
+     blob URL (relative specifiers can't resolve from blob URLs) -->
+<script type="text/plain" id="three-core-b64">/*__THREE_CORE_B64__*/</script>
+<script type="text/plain" id="three-b64">/*__THREE_B64__*/</script>
+<script>
+"use strict";
+const DATA = /*__DATA__*/null;
+
+function b64ToBytes(b64) {
+  const bin = atob(b64), out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function blobUrl(parts) {
+  return URL.createObjectURL(new Blob(parts, { type: "text/javascript" }));
+}
+
+async function boot() {
+  const coreUrl = blobUrl(
+    [b64ToBytes(document.getElementById("three-core-b64").textContent.trim())]);
+  const modSrc = new TextDecoder().decode(
+    b64ToBytes(document.getElementById("three-b64").textContent.trim()));
+  const THREE = await import(blobUrl(
+    [modSrc.replace(/\.\/three\.core(\.min)?\.js/g, coreUrl)]));
+  main(THREE);
+}
+
+function main(THREE) {
+  // ---- binary STL (base64) -> BufferGeometry ------------------------------
+  function stlToGeometry(bytes) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const n = dv.getUint32(80, true);
+    const pos = new Float32Array(n * 9);
+    let o = 84;
+    for (let i = 0; i < n; i++) {
+      o += 12; // skip facet normal, recompute flat normals instead
+      for (let v = 0; v < 9; v++) { pos[i * 9 + v] = dv.getFloat32(o, true); o += 4; }
+      o += 2;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    return g;
+  }
+
+  // ---- scene --------------------------------------------------------------
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x14171c);
+  const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 1, 4000);
+
+  // intensities are on the physical scale used since r155 (~pi x the old values)
+  scene.add(new THREE.HemisphereLight(0xf4f6ff, 0x3a3630, 3.1));
+  const key = new THREE.DirectionalLight(0xffffff, 5.0); key.position.set(180, -260, 320);
+  const fill = new THREE.DirectionalLight(0xbfd4ff, 1.6); fill.position.set(-240, 180, 140);
+  scene.add(key, fill);
+
+  const grid = new THREE.GridHelper(200, 20, 0x2a323e, 0x222831);
+  grid.rotation.x = Math.PI / 2; // grid into the XY plane: the model is z-up
+  scene.add(grid);
+
+  // world group: z-up model, XY origin = cavity centre, z=0 on the "table";
+  // Y- (both USB-C ports) faces the camera, i.e. the counter as held
+  const world = new THREE.Group();
+  scene.add(world);
+
+  // ---- build the parts ----------------------------------------------------
+  for (const p of DATA.parts) {
+    const geo = stlToGeometry(b64ToBytes(p.stl));
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(p.color), roughness: 0.55, metalness: 0.05,
+      transparent: !!p.opacity, opacity: p.opacity || 1.0,
+      depthWrite: !p.opacity,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.userData = p;
+    world.add(mesh);
+  }
+
+  // ---- camera + custom orbit ----------------------------------------------
+  const target = new THREE.Vector3(0, 0, 12);
+  let theta = -1.1, phi = 1.05, dist = 170;
+  function applyCamera() {
+    // z-up spherical orbit
+    camera.position.set(
+      target.x + dist * Math.sin(phi) * Math.cos(theta),
+      target.y + dist * Math.sin(phi) * Math.sin(theta),
+      target.z + dist * Math.cos(phi));
+    camera.up.set(0, 0, 1);
+    camera.lookAt(target);
+  }
+  applyCamera();
+
+  const ptrs = new Map();
+  let lastPinch = 0;
+  renderer.domElement.addEventListener("pointerdown", e => {
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    renderer.domElement.setPointerCapture(e.pointerId);
+  });
+  renderer.domElement.addEventListener("pointermove", e => {
+    if (!ptrs.has(e.pointerId)) return;
+    const [px, py] = ptrs.get(e.pointerId);
+    const dx = e.clientX - px, dy = e.clientY - py;
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    if (ptrs.size === 2) {
+      const pts = [...ptrs.values()];
+      const pinch = Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]);
+      if (lastPinch) dist = Math.max(50, Math.min(600, dist * lastPinch / pinch));
+      lastPinch = pinch;
+    } else if (e.shiftKey || e.buttons === 2) {
+      const s = dist / 900;
+      const right = new THREE.Vector3().crossVectors(
+        camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+      target.addScaledVector(right, -dx * s);
+      target.z += dy * s;
+    } else {
+      theta -= dx * 0.006;
+      phi = Math.max(0.05, Math.min(Math.PI - 0.05, phi - dy * 0.006));
+    }
+    spinBox.checked = false;
+    applyCamera();
+  });
+  const endPtr = e => { ptrs.delete(e.pointerId); lastPinch = 0; };
+  renderer.domElement.addEventListener("pointerup", endPtr);
+  renderer.domElement.addEventListener("pointercancel", endPtr);
+  renderer.domElement.addEventListener("wheel", e => {
+    e.preventDefault();
+    dist = Math.max(50, Math.min(600, dist * (1 + e.deltaY * 0.001)));
+    applyCamera();
+  }, { passive: false });
+  renderer.domElement.addEventListener("contextmenu", e => e.preventDefault());
+
+  // ---- UI -------------------------------------------------------------------
+  const $ = id => document.getElementById(id);
+  const spinBox = $("spin");
+
+  function refresh() {
+    const lift = +$("explode").value;
+    $("exval").textContent = lift + " mm";
+    const xray = $("xray-lid").checked;
+    const showGhosts = $("show-ghosts").checked;
+    for (const mesh of world.children) {
+      const p = mesh.userData;
+      // the lid lifts by the slider, the caps (pushed into it from below) half as much
+      mesh.position.z = p.attach === "lid" ? lift : p.attach === "cap" ? lift * 0.5 : 0;
+      mesh.visible = p.ghost ? showGhosts : $("show-" + p.name).checked;
+      if (p.name === "lid") {
+        mesh.material.transparent = xray;
+        mesh.material.opacity = xray ? 0.32 : 1.0;
+        mesh.material.depthWrite = !xray;
+        mesh.material.side = THREE.DoubleSide;
+        mesh.material.needsUpdate = true;
+      }
+    }
+  }
+  ["explode", "show-base", "show-lid", "show-cap-plus", "show-cap-minus",
+   "xray-lid", "show-ghosts"].forEach(id => $(id).oninput = refresh);
+  refresh();
+
+  const link = f => `<div class="file"><a href="${f}" download>${f}</a></div>`;
+  $("parts").innerHTML = "<b>Print these four</b>" + DATA.files.map(link).join("");
+
+  if (DATA.title) {
+    document.title = DATA.title;
+    const [brand, ...rest] = DATA.title.split(" — ");
+    $("title").textContent = brand;
+    $("subtitle").textContent = rest.join(" — ") || "case preview";
+  }
+  const ROWS = { closed: "Closed", tolerances: "Tolerances", shell: "Shell" };
+  $("dims").innerHTML = "<b>Dimensions</b>" +
+    Object.entries(ROWS).filter(([k]) => DATA.dims[k])
+      .map(([k, l]) => `<div>${l}: <strong>${DATA.dims[k]}</strong></div>`)
+      .join("");
+
+  addEventListener("resize", () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  (function loop() {
+    requestAnimationFrame(loop);
+    if (spinBox.checked) { theta += 0.0035; applyCamera(); }
+    renderer.render(scene, camera);
+  })();
+}
+
+boot();
+</script>
+</body>
+</html>

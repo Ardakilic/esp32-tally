@@ -1,0 +1,192 @@
+substitutions:
+  name: tally
+  friendly_name: Tally Counter
+  idle_sleep: 60s
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  on_boot:
+    - script.execute: idle_timer
+  on_shutdown:
+    - lambda: id(oled).turn_off();
+
+esp32:
+  variant: esp32c3
+  board: nologo_esp32c3_super_mini
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+
+logger:
+
+# reboot_timeout 0s everywhere: the counter must keep working with no Wi-Fi/HA.
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  reboot_timeout: 0s
+  ap:
+    password: !secret ap_password
+
+captive_portal:
+
+api:
+  encryption:
+    key: !secret api_key
+  reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+    encryption:  # reuses the api key
+
+preferences:
+  flash_write_interval: 10s
+
+globals:
+  - id: count
+    type: int
+    restore_value: true
+    initial_value: "0"
+  - id: combo  # true while a both-buttons reset is in progress; suppresses the ±1 on release
+    type: bool
+    initial_value: "false"
+
+i2c:
+  sda: GPIO6
+  scl: GPIO7
+
+font:
+  - file: "gfonts://Roboto@700"
+    id: big
+    size: 28
+    glyphs: "0123456789"
+
+display:
+  - platform: ssd1306_i2c
+    id: oled
+    model: "SSD1306 128x32"
+    address: 0x3C
+    update_interval: never
+    lambda: it.printf(it.get_width() / 2, it.get_height() / 2, id(big), TextAlign::CENTER, "%d", id(count));
+
+deep_sleep:
+  id: ds
+  wakeup_pin:
+    number: GPIO3
+    allow_other_uses: true  # shared with btn_up
+    inverted: true
+    mode:
+      input: true
+      pullup: true
+  wakeup_pin_mode: KEEP_AWAKE
+
+script:
+  - id: refresh
+    then:
+      - component.update: oled
+      - component.update: tally_number
+  - id: idle_timer
+    mode: restart
+    then:
+      - delay: ${idle_sleep}
+      - if:
+          condition:
+            switch.is_off: keep_awake
+          then:
+            # C3 has no ext1: add GPIO4 as a second wake source (IDF ORs the mask; ESPHome adds GPIO3 after this)
+            - lambda: esp_deep_sleep_enable_gpio_wakeup(1ULL << 4, ESP_GPIO_WAKEUP_GPIO_LOW);
+            - deep_sleep.enter: ds
+  - id: both_check
+    mode: restart
+    then:
+      - if:
+          condition:
+            and:
+              - binary_sensor.is_on: btn_up
+              - binary_sensor.is_on: btn_down
+          then:
+            - delay: 1s
+            - globals.set:
+                id: combo
+                value: "true"
+            - globals.set:
+                id: count
+                value: "0"
+            - script.execute: refresh
+
+binary_sensor:
+  - platform: gpio
+    id: btn_up
+    pin:
+      number: GPIO3
+      allow_other_uses: true  # shared with deep_sleep wakeup_pin
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    filters:
+      - delayed_on_off: 20ms
+    on_press:
+      - script.execute: idle_timer
+      - script.execute: both_check
+    on_release:
+      - script.execute: idle_timer
+      - script.stop: both_check
+      # millis() guard: the press that woke us from deep sleep is already ON at boot; its release must not count
+      - lambda: |-
+          if (!id(combo) && millis() > 1500 && id(count) < 99999) id(count)++;
+          if (!id(btn_down).state) id(combo) = false;
+      - script.execute: refresh
+  - platform: gpio
+    id: btn_down
+    pin:
+      number: GPIO4
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    filters:
+      - delayed_on_off: 20ms
+    on_press:
+      - script.execute: idle_timer
+      - script.execute: both_check
+    on_release:
+      - script.execute: idle_timer
+      - script.stop: both_check
+      - lambda: |-
+          if (!id(combo) && millis() > 1500 && id(count) > 0) id(count)--;
+          if (!id(btn_up).state) id(combo) = false;
+      - script.execute: refresh
+
+number:
+  - platform: template
+    name: Tally Count
+    id: tally_number
+    min_value: 0
+    max_value: 99999
+    step: 1
+    mode: box
+    lambda: return id(count);
+    set_action:
+      - globals.set:
+          id: count
+          value: !lambda return (int) x;
+      - script.execute: refresh
+
+button:
+  - platform: template
+    name: Reset Tally
+    on_press:
+      - globals.set:
+          id: count
+          value: "0"
+      - script.execute: refresh
+
+switch:
+  - platform: template
+    name: Keep Awake
+    id: keep_awake
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_off_action:  # re-arm the idle timer once OTA work is done
+      - script.execute: idle_timer

@@ -1,0 +1,23 @@
+# Pinned on purpose: the mesh stack decides triangulation and last-bit floats,
+# so a floating toolchain re-writes every published STL byte (geometry stays
+# the same, git churns anyway). These are the versions the STLs in this repo
+# are generated with (Python 3.14, see Dockerfile). To upgrade: bump, rebuild
+# the image, regenerate, check the printed bounding boxes/volumes, and commit
+# the regenerated STLs together with this file.
+numpy==2.5.3
+shapely==2.1.2
+trimesh==5.1.0
+manifold3d==3.5.3
+mapbox_earcut==2.1.0
+matplotlib==3.11.2
+
+# transitive (all pulled in by matplotlib) — pinned so the image is reproducible
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.65.0
+kiwisolver==1.5.1
+packaging==26.3
+pillow==12.3.0
+pyparsing==3.3.3
+python-dateutil==2.9.0.post0
+six==1.17.0
