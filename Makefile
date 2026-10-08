@@ -20,6 +20,9 @@
 #
 # Fit tolerances can be overridden per run (see README -> Fit tuning):
 #   make case GEN_ARGS="--clear-friction 0.32 --tact-height 4.3"
+# Lid engraving (default "Grindarr"):
+#   make case ENGRAVING="My Text"     # -> --engraving "My Text"
+#   make case OMIT_ENGRAVING=1        # -> --omit-engraving (plain lid top)
 
 IMAGE_CASE    := esp32-tally-case
 IMAGE_PLAIN   := esp32-tally-plain
@@ -28,6 +31,9 @@ GCC_IMAGE     := gcc:14
 VOL_PIO       := esp32-tally-pio
 VOL_ESPHOME   := esp32-tally-esphome-cache
 GEN_ARGS      ?=
+ENGRAVING     ?=          # make case ENGRAVING="My Text"   -> --engraving "My Text"
+OMIT_ENGRAVING ?=         # make case OMIT_ENGRAVING=1      -> --omit-engraving
+override GEN_ARGS += $(if $(ENGRAVING),--engraving "$(ENGRAVING)") $(if $(OMIT_ENGRAVING),--omit-engraving)
 DEVICE        ?= tally.local
 
 # the whole repo is mounted (generate.py writes the Pages index.html to the root)
@@ -53,8 +59,8 @@ case: image-case
 
 # the ray-cast extras go into the throwaway container only, never the image
 case-verify: image-case
-	$(RUN_CASE) sh -c "pip install -q --root-user-action=ignore \
-		-r requirements-dev.txt && python3 tools/verify.py $(GEN_ARGS)"
+	$(RUN_CASE) sh -c 'pip install -q --root-user-action=ignore \
+		-r requirements-dev.txt && python3 tools/verify.py $(GEN_ARGS)'
 
 # stdlib-only fetcher, so the bare image does (vendor/ is committed)
 vendor:

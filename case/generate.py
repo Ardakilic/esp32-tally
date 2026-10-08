@@ -5,9 +5,10 @@ Tally case — 3D-printed enclosure for the ESP32-C3 Super Mini tally counter.
 Four print-ready STLs for a two-part case plus two button caps:
 
   stl/tally-base.stl       tub: battery + TP4056 + slide switch below, the
-                           18 x 20 perfboard on a ledge above
-  stl/tally-lid.stl        plate with OLED window and two cap holes; its skirt
-                           slides inside the frame and clamps the perfboard
+                           50 x 50 perfboard on a ledge above
+  stl/tally-lid.stl        plate with OLED window, two cap holes and the name
+                           engraved on top; its skirt slides inside the frame
+                           and clamps the perfboard
   stl/tally-cap-plus.stl   button cap, embossed "+" (right button, UP)
   stl/tally-cap-minus.stl  button cap, embossed "-" (left button, DOWN)
 
@@ -32,7 +33,7 @@ top face, the caps upright on their flanges; no supports needed.
 
 Usage:
   python3 generate.py [--clear-friction MM] [--tact-height MM]
-                      [--battery WxLxT]
+                      [--battery WxLxT] [--engraving TEXT | --omit-engraving]
 
 Fit tolerances are CLI flags (defaults below), so they can be tuned per
 printer/kit without editing code — via Docker: see the repo README.
@@ -48,7 +49,8 @@ import sys
 
 import numpy as np
 import trimesh
-from shapely.geometry import box as shp_box
+from shapely import affinity
+from shapely.geometry import Polygon, box as shp_box
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -66,12 +68,17 @@ LEDGE_MIN = 1.5        # minimum ledge the perfboard edge rests on (minus PCB_CL
 CLEAR_FRICTION = 0.28  # lid-skirt-to-frame clearance per side (printer-calibrated
                        # friction fit, carried over from filtarr; --clear-friction)
 
-# Perfboard (board cut BETWEEN hole rows, so the edge is PITCH/2 past the last hole)
+# Perfboard: Özdisan 5x5 single-sided board, used whole. 18 x 19 holes centred
+# on 50 x 50 (2.14 mm from the outer row centres to the Y edges, 3.41 from the
+# outer column centres to the X edges). Pads on one face only: they face down,
+# components go on the bare face.
+PCB_URL = "https://www.ozdisan.com/p/prototipleme-devreleri-621/ozd-arduino-delkl-pertnaks-5x5-643014"
 PITCH = 2.54           # 0.1" hole pitch
+PCB_W, PCB_L = 50.0, 50.0
 PCB_COLS = 18          # holes along X
-PCB_ROWS = 20          # holes along Y
+PCB_ROWS = 19          # holes along Y
 PCB_T = 1.6            # FR4 thickness
-PCB_CLEAR = 0.3        # per side, so a hand-cut board drops into the frame
+PCB_CLEAR = 0.3        # per side, so the board drops into the frame
 
 # 6 x 6 tact switches (two: left = DOWN "-", right = UP "+")
 TACT_H = 5.0           # PCB top to plunger top; kits ship 4.3/5/6/7 (--tact-height)
@@ -96,6 +103,7 @@ ESP_USB_OVERHANG = 1.5  # receptacle beyond the PCB edge
 ESP_USB_W, ESP_USB_H = 9.0, 3.2
 ESP_STANDOFF = 2.54    # male-header plastic spacer between perfboard and module
 ESP_PCB_T = 1.0
+USB_WALL_T = 1.4       # wall left in front of the ESP32's USB-C by the plug relief
 
 # 0.91" 128x32 OLED on a 1x4 header along Y at its X- short end
 OLED_W, OLED_L = 38.0, 12.0
@@ -135,15 +143,26 @@ USB_CUT_PAD = 1.0      # extra opening height (0.5 below, 0.5 above the shell)
 QS = 24                # quad segments for shapely buffers (corner smoothness)
 PARTS = ("base", "lid", "cap-plus", "cap-minus")
 
+# Lid engraving: ENGRAVE_TEXT into the lid top (--engraving / --omit-engraving),
+# Liberation Sans Bold via matplotlib's TextPath (filtarr's mechanism; the font
+# comes from the Dockerfile's fonts-liberation). Reads along +X, upright toward
+# Y+, i.e. the right way up with the USB ports toward you. The lid prints
+# top-face-down, so the recess sits on the bed and comes out crisp.
+ENGRAVE_TEXT = "Grindarr"  # None = omitted
+ENGRAVE_DEPTH = 0.6        # 3 layers at 0.2 mm
+ENGRAVE_H = 6.0            # cap height; auto-shrunk if the text would not fit
+ENGRAVE_XY = (0.0, -13.0)  # centre: the free band between the cap holes and the Y- edge
+ENGRAVE_FONT = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+
 
 def derive():
     """Cavity, frame and layout numbers that follow from the parameters above.
     Module globals on purpose (house style): re-run after apply_printer_args."""
-    global PCB_W, PCB_L, CAV_W, CAV_L, OPEN_W, OPEN_L, OUT_W, OUT_L
+    global CAV_W, CAV_L, OPEN_W, OPEN_L, OUT_W, OUT_L
     global Z_LEDGE, PCB_TOP, Z_TOP, SKIRT_W, SKIRT_L, SKIRT_NOTCH_W
     global BAT_X0, TP_X0, TP_X, TP_Y0, RIB_X, ESP_X, ESP_Y0, ESP_POCKET
+    global USB_RELIEF_Y, ESP_USB_RECESS
     global TACT_XY, OLED_X, OLED_Y, WIN_XY, CAP_FLANGE_T, CAP_STEM_H
-    PCB_W, PCB_L = PCB_COLS * PITCH, PCB_ROWS * PITCH
     # lower cavity: battery beside the TP4056 (rib + two gaps = 3 mm), or the
     # frame opening plus a ledge on each side, whichever is wider
     CAV_W = max(BAT_W + TP_W + 3.0, PCB_W + 2 * (PCB_CLEAR + LEDGE_MIN))
@@ -160,18 +179,25 @@ def derive():
     TP_X = TP_X0 + TP_W / 2
     TP_Y0 = -CAV_L / 2 - TP_POCKET
     RIB_X = (BAT_X0 + BAT_W + TP_X0) / 2
-    # ESP32: pin rows in cols 3 and 9, rows 0..7, USB at Y-. The module's PCB
-    # overhangs the perfboard edge (ESP_PIN_END > PITCH/2) into the frame wall,
-    # hence a pocket in the wall's inner face and a wide notch in the lid skirt.
+    # ESP32: pin rows in cols 3 and 9, rows 0..7, USB at Y-. Row 0 sits 2.14 mm
+    # from the board edge, so the module's PCB just reaches the frame wall (a
+    # shallow clearance pocket in the wall's inner face, 0.3 like the TP4056's)
+    # and its USB-C face would sit ~2 mm inside a full-thickness wall — too deep
+    # for a plug. So the wall's OUTER face gets a plug relief (SKIRT_NOTCH_W wide,
+    # from PCB_TOP + 2 up through the lid plate) that leaves USB_WALL_T of wall
+    # beside the USB slot: the receptacle face ends up ~flush with it.
     ESP_X = hole(6, 0)[0]
     ESP_Y0 = hole(3, 0)[1] - ESP_PIN_END
-    ESP_POCKET = -OPEN_L / 2 - ESP_Y0 + 0.5
+    ESP_POCKET = max(0.0, -OPEN_L / 2 - ESP_Y0 + 0.3)
     SKIRT_NOTCH_W = ESP_W + 1.0
-    # tact bodies between cols 3/4 and 13/14 on row 12
-    TACT_XY = (hole(3.5, 12), hole(13.5, 12))
-    # OLED header in col 1, rows 15..18; PCB extends towards X+
+    USB_RELIEF_Y = -OPEN_L / 2 - ESP_POCKET - USB_WALL_T   # the face a plug butts against
+    ESP_USB_RECESS = (ESP_Y0 - ESP_USB_OVERHANG) - USB_RELIEF_Y  # > 0 = behind that face
+    # tact bodies between cols 3/4 and 13/14 on row 11 (row 12 would hit the OLED)
+    TACT_XY = (hole(3.5, 11), hole(13.5, 11))
+    # OLED header in col 1, rows 14..17; PCB extends towards X+ and ends at
+    # Y +22.5, clear of the lid skirt along the Y+ edge
     OLED_X = hole(1, 0)[0] - OLED_PIN_EDGE + OLED_W / 2
-    OLED_Y = hole(0, 16.5)[1]
+    OLED_Y = hole(0, 15.5)[1]
     WIN_XY = (OLED_X + OLED_AA_DX, OLED_Y)
     # caps: flange fills the gap under the plate minus 0.3 play (no rattle),
     # stem ends 1 mm proud of the lid
@@ -247,7 +273,11 @@ def build_base():
         # lid plate closes it (its skirt is notched here anyway)
         bbox(ESP_X - USB_CUT_W / 2, -OUT_L / 2 - 1.0, esp_usb_z,
              ESP_X + USB_CUT_W / 2, -OPEN_L / 2 + 1.0, Z_TOP + 1.0),
-        # pocket in the frame's inner face for the module PCB's overhang
+        # plug relief in the wall's outer face (the lid plate is notched above
+        # it), leaving USB_WALL_T of wall around the slot
+        bbox(ESP_X - SKIRT_NOTCH_W / 2, -OUT_L / 2 - 1.0, PCB_TOP + 2.0,
+             ESP_X + SKIRT_NOTCH_W / 2, USB_RELIEF_Y, Z_TOP + 1.0),
+        # clearance pocket in the frame's inner face for the module PCB's edge
         bbox(ESP_X - SKIRT_NOTCH_W / 2, -OPEN_L / 2 - ESP_POCKET, PCB_TOP + ESP_STANDOFF - 0.5,
              ESP_X + SKIRT_NOTCH_W / 2, -OPEN_L / 2 + 1.0, Z_TOP + 1.0),
         # TP4056 USB-C through the Y- lower wall + inner-face pocket for its PCB end
@@ -289,8 +319,50 @@ def build_lid():
         # skirt notch on the Y- side: the ESP32 module passes under the plate
         bbox(ESP_X - SKIRT_NOTCH_W / 2, -SKIRT_L / 2 - 1.0, Z_TOP - LID_CLEAR - 1.0,
              ESP_X + SKIRT_NOTCH_W / 2, -SKIRT_L / 2 + SKIRT_T + 1.0, Z_TOP),
+        # plate notch over the base's USB-C plug relief, so a plug's overmold
+        # reaches the thin wall instead of stopping at the plate edge
+        bbox(ESP_X - SKIRT_NOTCH_W / 2, -OUT_L / 2 - 1.0, Z_TOP - 1.0,
+             ESP_X + SKIRT_NOTCH_W / 2, USB_RELIEF_Y, Z_TOP + LID_T + 1.0),
     ] + [cyl(CAP_HOLE_D, Z_TOP - 1.0, Z_TOP + LID_T + 1.0, xy) for xy in TACT_XY]
+    geom, _ = engraving_geometry()
+    if geom is not None:
+        top = Z_TOP + LID_T
+        cutters += [prism(q, top - ENGRAVE_DEPTH, top + 1.0) for q in getattr(geom, "geoms", [geom])]
     return diff(union(plate, skirt), *cutters)
+
+
+def engraving_geometry():
+    """ENGRAVE_TEXT as one shapely (Multi)Polygon in world XY on the lid top,
+    plus the cap height actually used: Liberation Sans Bold through matplotlib's
+    TextPath, scaled to ENGRAVE_H cap height (shrunk if it would leave the free
+    band), centred on ENGRAVE_XY, reading along +X. (None, 0) when omitted."""
+    if ENGRAVE_TEXT is None:
+        return None, 0.0
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.textpath import TextPath
+    fp = FontProperties(fname=ENGRAVE_FONT)
+
+    def glyphs(text):
+        # outer rings first; a ring inside what we have so far is a counter
+        rings = sorted((Polygon(r).buffer(0) for r in TextPath((0, 0), text, size=40, prop=fp)
+                        .to_polygons() if len(r) >= 3), key=lambda q: -q.area)
+        geom = None
+        for q in rings:
+            if not q.is_empty:
+                geom = q if geom is None else (geom.difference(q) if geom.covers(q) else geom.union(q))
+        return geom
+
+    geom, cap = glyphs(ENGRAVE_TEXT), glyphs("H").bounds
+    x0, y0, x1, y1 = geom.bounds
+    # free band: inside the lid edges by WALL + 4, below the cap holes by 2
+    y_lo = -OUT_L / 2 + WALL + 4.0
+    y_hi = min(y for _, y in TACT_XY) - CAP_HOLE_D / 2 - 2.0
+    max_w, max_h = OUT_W - 2 * (WALL + 4.0), 2 * min(ENGRAVE_XY[1] - y_lo, y_hi - ENGRAVE_XY[1])
+    s = min(ENGRAVE_H / (cap[3] - cap[1]), max_w / (x1 - x0), max_h / (y1 - y0))
+    geom = affinity.scale(geom, s, s, origin=(0, 0))
+    x0, y0, x1, y1 = geom.bounds
+    geom = affinity.translate(geom, ENGRAVE_XY[0] - (x0 + x1) / 2, ENGRAVE_XY[1] - (y0 + y1) / 2)
+    return geom, s * (cap[3] - cap[1])
 
 
 def build_cap(symbol):
@@ -351,7 +423,7 @@ def component_boxes():
 def apply_printer_args(argv=None):
     """Override the printer/kit-fit parameters from the command line, so parts
     can be tuned without editing code (`... generate.py --clear-friction 0.32`)."""
-    global CLEAR_FRICTION, TACT_H, BAT_W, BAT_L, BAT_T
+    global CLEAR_FRICTION, TACT_H, BAT_W, BAT_L, BAT_T, ENGRAVE_TEXT
     p = argparse.ArgumentParser(description="Generate the tally case STLs.")
     p.add_argument("--clear-friction", type=float, default=CLEAR_FRICTION,
                    metavar="MM", help="lid skirt clearance to the frame per side "
@@ -362,7 +434,24 @@ def apply_printer_args(argv=None):
     p.add_argument("--battery", default=f"{BAT_W:g}x{BAT_L:g}x{BAT_T:g}",
                    metavar="WxLxT", help="battery pouch envelope incl. tab and "
                    f"swelling (default {BAT_W:g}x{BAT_L:g}x{BAT_T:g})")
+    p.add_argument("--engraving", default=ENGRAVE_TEXT, metavar="TEXT",
+                   help=f"text engraved into the lid top (default {ENGRAVE_TEXT!r}; "
+                   f"{ENGRAVE_H:g} mm caps, {ENGRAVE_DEPTH:g} mm deep, auto-shrunk to fit)")
+    p.add_argument("--omit-engraving", action="store_true", help="plain lid top, no text")
     a = p.parse_args(argv)
+    ENGRAVE_TEXT = None if a.omit_engraving else a.engraving
+    if ENGRAVE_TEXT is not None:
+        if not ENGRAVE_TEXT.strip():
+            p.error("--engraving wants some text (or use --omit-engraving)")
+        if not os.path.exists(ENGRAVE_FONT):
+            p.error(f"{ENGRAVE_FONT} is missing — run inside the Docker image "
+                    "(fonts-liberation) or use --omit-engraving")
+        from matplotlib.font_manager import FontProperties
+        from matplotlib.textpath import TextPath
+        fp = FontProperties(fname=ENGRAVE_FONT)
+        for ch in set(ENGRAVE_TEXT) - {" "}:
+            if not TextPath((0, 0), ch, size=40, prop=fp).to_polygons():
+                p.error(f"--engraving: Liberation Sans Bold has no outline for {ch!r}")
     try:
         bat = [float(v) for v in a.battery.lower().split("x")]
         assert len(bat) == 3
@@ -389,12 +478,21 @@ def shell_summary():
     return (f"walls {WALL:.1f} / floor {FLOOR:.1f} / lid {LID_T:.1f} / skirt "
             f"{SKIRT_T:.1f} mm; cavity {CAV_W:.1f} x {CAV_L:.1f}, perfboard on the "
             f"ledge at Z {Z_LEDGE:.1f}; outer {OUT_W:.1f} x {OUT_L:.1f} x "
-            f"{Z_TOP + LID_T:.1f} with lid")
+            f"{Z_TOP + LID_T:.1f} with lid; ESP32 USB-C behind {USB_WALL_T:.1f} mm "
+            f"of wall, recessed {ESP_USB_RECESS:.2f}")
+
+
+def engraving_summary():
+    if ENGRAVE_TEXT is None:
+        return "omitted"
+    _, cap = engraving_geometry()
+    return f'"{ENGRAVE_TEXT}" ({cap:.3g} mm, {ENGRAVE_DEPTH:g} deep)'
 
 
 def main():
     apply_printer_args()
-    summary = [("tolerances", tolerance_summary()), ("shell", shell_summary())]
+    summary = [("tolerances", tolerance_summary()), ("shell", shell_summary()),
+               ("engraving", engraving_summary())]
     for label, text in summary:
         print(f"{label} — {text}")
     print()
@@ -552,10 +650,11 @@ def build_index():
     <a href="case/docs/perfboard-layout.png"><img loading="lazy" src="case/docs/perfboard-layout.png"
          alt="Perfboard layout with every component, pin name and wire"></a>
     <h2>Build it</h2>
-    <p class="geo">18 × 20-hole perfboard · ESP32-C3 Super Mini · SSD1306 128 × 32 ·
-       TP4056 · 503450 LiPo</p>
+    <p class="geo">50 × 50 mm single-sided perfboard ({PCB_COLS} × {PCB_ROWS} holes) ·
+       ESP32-C3 Super Mini · SSD1306 128 × 32 · TP4056 · 503450 LiPo</p>
     <ul class="links">
-      <li><a href="case/docs/perfboard-layout.png">Perfboard layout</a></li>
+      <li><a href="case/docs/perfboard-layout.png">Perfboard layout</a>
+          (<a href="{PCB_URL}">Özdisan 5x5 perfboard</a>)</li>
       <li><a href="case/docs/wiring.png">Wiring block schematic</a></li>
       <li><a href="{REPO_URL}#bill-of-materials">Bill of materials, wiring table, assembly (README)</a></li>
     </ul>

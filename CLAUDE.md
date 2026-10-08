@@ -1,8 +1,9 @@
 # CLAUDE.md — ESP32 Tally Counter
 
 Handheld tally counter: ESP32-C3 Super Mini + 0.91" SSD1306 OLED + two 6 × 6 tact
-switches + TP4056 + 503450 LiPo + SS12D00 slide switch on an 18 × 20-hole
-perfboard, in a 58.0 × 58.4 × 22.1 mm printed case. Two firmwares (plain
+switches + TP4056 + 503450 LiPo + SS12D00 slide switch on a 50 × 50 mm Özdisan
+single-sided 18 × 19-hole perfboard (used whole), in a 58.0 × 57.6 × 22.1 mm
+printed case with "Grindarr" engraved in the lid. Two firmwares (plain
 PlatformIO, ESPHome) implement identical behaviour. Everything — STLs, README
 images, the 3D preview, the Pages index, both binaries — is **generated** through
 Docker + make; nothing is installed on the host and no generated file is ever
@@ -26,9 +27,11 @@ firmware/esphome/tally.yaml    ESPHome 2026.9.1, esp-idf; secrets.yaml (gitignor
   .esphome/build/tally/build/firmware.{factory,ota}.bin   outputs (gitignored)
 case/generate.py               constants with why-comments + derive() + build(part) -> 4 STLs
                                + build_preview() -> case/preview.html + build_index() -> index.html
+case/Dockerfile                python:3.14-slim + fonts-liberation (engraving font) + requirements.txt
 case/preview_template.html     template for the self-contained three.js preview (filtarr's)
 case/tools/render_docs.py      README images (matplotlib software renders), same flags
-case/tools/verify.py           59 checks on in-memory builds, exit 1 on failure, same flags
+case/tools/verify.py           68 checks on in-memory builds (64 with --omit-engraving), exit 1
+                               on failure, same flags
 case/tools/fetch_three.py      stdlib-only three.js downloader (`make vendor`, bare python image)
 case/vendor/                   three.module.min.js + three.core.min.js + THREE_VERSION (committed)
 case/stl/, case/docs/          COMMITTED outputs — regenerate, never edit
@@ -52,9 +55,12 @@ make esphome-config  # validate only
 make esphome-ota     # DEVICE ?= tally.local — turn on "Keep Awake" in HA first
 make clean           # case/stl case/docs case/preview.html index.html .pio build .esphome (volumes stay)
 make case GEN_ARGS="--clear-friction 0.32 --tact-height 4.3 --battery 30x40x5"
+make case ENGRAVING="My Text"   # appends --engraving "My Text" to GEN_ARGS
+make case OMIT_ENGRAVING=1      # appends --omit-engraving (plain lid top)
 ```
 
-Expected results: verify `59 checks — ALL PASS`; plain RAM 4.6 % / Flash 25.2 %;
+Expected results: verify `68 checks — ALL PASS` (64 with `--omit-engraving`);
+plain RAM 4.6 % / Flash 25.2 %;
 ESPHome Flash 51 % / RAM 33 %, factory bin 983 KB.
 
 ## Technology decisions (and why)
@@ -73,16 +79,26 @@ ESPHome Flash 51 % / RAM 33 %, factory bin 983 KB.
   hardware I2C plus a 28 px numeric font (`logisoso28_tn`); no GFX + BusIO pair.
 - **shapely + trimesh + manifold3d, not CadQuery/OpenSCAD**: the filtarr stack —
   2D outlines → extrude → booleans, same Dockerfile pattern, pinned so STL bytes
-  are reproducible. No fonts: the "+"/"−" symbols are rectangles.
+  are reproducible. The "+"/"−" cap symbols are rectangles; the only text is the
+  lid engraving, Liberation Sans Bold via matplotlib's `TextPath` (filtarr's
+  mechanism), the font from the image's `fonts-liberation` — the one apt package
+  left unpinned, so a font change re-triangulates only `tally-lid.stl`.
 - **Friction lid** (no screws, no magnets): the skirt slides *inside* the frame and
   clamps the perfboard on the ledge. 0.28 mm/side is filtarr's calibrated value.
-- **Perfboard-driven geometry**: every placement is `hole(col, row)`; cavity,
-  ledge, window and cap holes derive from PCB_COLS/ROWS. No custom PCB — Arda
-  solders on perfboard.
+- **Perfboard-driven geometry**: the board is a specific part used whole (Özdisan
+  5 × 5, `PCB_URL`, 50 × 50, 18 × 19 holes centred — no cutting), every placement
+  is `hole(col, row)`, and cavity, ledge, window and cap holes derive from
+  PCB_W/L and PCB_COLS/ROWS. Single-sided: pads face down, components on the bare
+  face; the layout drawing is the component-side view (mirrored when soldering).
+  No custom PCB — Arda solders on perfboard.
 - **The ESP32's USB-C is hidden under the lid on purpose**: `5V` is VBUS, so
   plugging it in with the switch ON back-feeds the TP4056 output. Opening the lid
   is the reminder. The slot is open-top in the wall and closed by the lid skirt's
-  19 mm notch; the TP4056's USB-C (charging) is the one exposed at floor level.
+  19 mm notch; because row 0 is only 2.14 mm from the board edge the port face
+  reaches just 1.72 mm past the perfboard, so the wall's outer face is relieved
+  there to `USB_WALL_T` 1.4 (the lid plate is notched over the relief) and the
+  port ends 0.2 mm behind it. The TP4056's USB-C (charging) is the one exposed at
+  floor level.
 
 ## Verified data (do not re-derive)
 
@@ -100,7 +116,9 @@ ESPHome Flash 51 % / RAM 33 %, factory bin 983 KB.
   4.3/5/6/7; SS12D00 8.8 × 3.9 × 3.5, handle 1.5, travel 2.0; OLED 38 × 12 PCB,
   glass 30 × 11.5, active area 22.4 × 5.6 offset 3.7 (`OLED_AA_DX`, unmeasured),
   6.9 tall; TP4056 17 × 28 × 1.0, USB 9 × 3.2 overhanging 1.0; battery 503450
-  34 × 50 × 5 → envelope 34 × 52 × 6.
+  34 × 50 × 5 → envelope 34 × 52 × 6; Özdisan 5 × 5 perfboard 50 × 50 × 1.6,
+  18 × 19 holes at 2.54 centred (outer rows 2.14 from the Y edges, outer columns
+  3.41 from the X edges), single-sided.
 - **Behaviour contract** (both firmwares, tested in `tally_logic_test.cpp`): click
   counts on release, 20 ms debounce, 0…99999, both held ≥ 1 s → 0 and the two
   releases are swallowed, 60 s idle → OLED off + deep sleep, the wake press is not
@@ -112,32 +130,44 @@ Frame: X = width (left/right as held), Y = length (Y− = bottom end with both
 USB-C, Y+ = display end), Z up, Z = 0 = outer bottom face, XY origin = cavity
 centre. Everything is modelled closed; the lid is flipped at export only.
 
-Derived (from `derive()`, defaults): PCB 45.72 × 50.8; cavity CAV 54.0 × 54.4
-(width from battery 34 + TP 17 + rib/gaps 3; length from PCB + 2 × (0.3 + 1.5)
-ledge); frame opening OPEN 46.32 × 51.4 (PCB + 0.3/side); outer 58.0 × 58.4;
-Z_LEDGE 11.0 (FLOOR 2 + PCB_Z 9), PCB_TOP 12.6, Z_TOP 20.1 (+ LID_CLEAR 7.5),
-closed 22.1; lid 9.5 tall = LID_T 2 + 7.5 skirt; SKIRT 45.76 × 50.84 (opening −
-2 × 0.28), SKIRT_NOTCH_W 19.0 over the ESP32 end.
+Derived (from `derive()`, defaults): PCB 50 × 50 (19 holes along Y, 18 along X,
+`hole()` centred on the board); cavity CAV 54.0 × 53.6 (width from battery 34 +
+TP 17 + rib/gaps 3; length from PCB + 2 × (0.3 + 1.5) ledge); frame opening OPEN
+50.6 × 50.6 (PCB + 0.3/side); outer 58.0 × 57.6; Z_LEDGE 11.0 (FLOOR 2 + PCB_Z 9),
+PCB_TOP 12.6, Z_TOP 20.1 (+ LID_CLEAR 7.5), closed 22.1; lid 9.5 tall = LID_T 2 +
+7.5 skirt; SKIRT 50.04 × 50.04 (opening − 2 × 0.28), SKIRT_NOTCH_W 19.0 over the
+ESP32 end; USB_RELIEF_Y −26.92 (= −OPEN_L/2 − ESP_POCKET − USB_WALL_T),
+ESP_USB_RECESS 0.20.
 
 - **Under the ledge** (lower cavity): battery bay at X− (BAT_X0 −26.5, 34 wide,
   0.5 air); TP4056 against the X+ wall (TP_X0 10, TP_X 18.5), USB end sunk 1 mm
   into the Y− wall (TP_Y0 −28.2), RIB_T 1.2 divider at RIB_X 8.75, stop block
   behind; TP4056 USB-C window in the Y− wall at floor level; slide switch on the
   X+ wall at SW_Y 14 between two ribs (SW_RIB 1.2 × 4.5), slot 4.0 × 2.0.
-- **On the ledge**: perfboard; ESP32 at ESP_X −6.35 (cols 3/9), its PCB starts at
-  ESP_Y0 −26.49 and overhangs the opening by ESP_POCKET 1.29 into a wall pocket;
-  its USB-C goes through an open-top slot (USB_CUT_W 10) that the lid skirt notch
-  closes. Tacts at TACT_XY (±12.7, 6.35) = `hole(3.5|13.5, 12)`. OLED header in
-  col 1 rows 15…18 → OLED_X −2.05, OLED_Y 17.78; window WIN 27 × 9 at
-  WIN_XY (1.65, 17.78) = OLED centre + OLED_AA_DX 3.7.
+- **On the ledge**: perfboard, pads down; ESP32 at ESP_X −6.35 (cols 3/9), its
+  PCB starts at ESP_Y0 −25.22 and overhangs the opening by ESP_POCKET 0.22 into a
+  shallow wall pocket; its USB-C goes through an open-top slot (USB_CUT_W 10) that
+  the lid skirt notch closes. The port face sits only 1.72 past the perfboard
+  edge, so the Y− wall is relieved from the OUTSIDE (SKIRT_NOTCH_W 19 wide, from
+  PCB_TOP + 2 up through the lid plate, which is notched over it) down to
+  USB_WALL_T 1.4 at USB_RELIEF_Y; the port ends ESP_USB_RECESS 0.20 behind that
+  face. Tacts at TACT_XY (±12.7, 5.08) = `hole(3.5|13.5, 11)` (row 12 would hit
+  the OLED). OLED header in col 1 rows 14…17 → OLED_X −2.05, OLED_Y 16.51; window
+  WIN 27 × 9 at WIN_XY (1.65, 16.51) = OLED centre + OLED_AA_DX 3.7.
 - **Lid**: plate 2.0, skirt 1.2 inside the frame, cap holes Ø8.4 at TACT_XY, pry
-  notch 10 × 1.5 in the Y+ wall top edge. Caps: stem Ø8.0, flange Ø11 × 2.2
-  (LID_CLEAR − TACT_H − 0.3), stem 5.5 (1 mm proud), Ø3.8 × 0.5 recess centres on
-  the plunger, 0.5 mm embossed symbol.
+  notch 10 × 1.5 in the Y+ wall top edge, plate notch over the USB relief.
+  Engraving: ENGRAVE_TEXT "Grindarr" (None = omitted) recessed ENGRAVE_DEPTH 0.6
+  into the top face, ENGRAVE_H 6.0 cap height (auto-shrunk to the free band),
+  centred ENGRAVE_XY (0, −13), ENGRAVE_FONT Liberation Sans Bold, reading along
+  +X, upright toward Y+. Caps: stem Ø8.0, flange Ø11 × 2.2 (LID_CLEAR − TACT_H −
+  0.3), stem 5.5 (1 mm proud), Ø3.8 × 0.5 recess centres on the plunger, 0.5 mm
+  embossed symbol.
 - `apply_printer_args` validates: `--tact-height` + 1.5 ≤ LID_CLEAR (→ ≤ 6.0),
-  battery T + 2 ≤ PCB_Z (→ ≤ 7), then re-runs `derive()`. `verify.py` and
-  `render_docs.py` import `generate` and call the same function, so the three
-  always agree on GEN_ARGS.
+  battery T + 2 ≤ PCB_Z (→ ≤ 7), `--engraving` non-empty with an outline for every
+  glyph (else `p.error`; `--omit-engraving` sets ENGRAVE_TEXT None), then re-runs
+  `derive()`. `verify.py` and `render_docs.py` import `generate` and call the same
+  function, so the three always agree on GEN_ARGS. The summary line prints
+  `Engraving: "Grindarr" (6 mm, 0.6 deep)` or `omitted`.
 
 ## Conventions & gotchas
 
@@ -171,6 +201,14 @@ closed 22.1; lid 9.5 tall = LID_T 2 + 7.5 skirt; SKIRT 45.76 × 50.84 (opening �
   --window-size=1400,900 file:///work/case/preview.html` renders WebGL in software.
 - `GEN_ARGS` must be identical across `make case` and `make case-verify` (and
   `render_docs.py`): the Makefile passes the same variable to all three scripts.
+  `ENGRAVING=` / `OMIT_ENGRAVING=1` are appended with **`override GEN_ARGS +=`** —
+  a plain `+=` is silently ignored when GEN_ARGS is given on the command line.
+  The `case-verify` recipe wraps its pip + verify in a single-quoted `sh -c '...'`
+  so a multi-word `--engraving "My Text"` survives the shell.
+- The engraving font lives in the **case image** (`fonts-liberation`, see
+  `case/Dockerfile`); `generate.py` `p.error`s if `ENGRAVE_FONT` is missing, so
+  run it through `make`. `make vendor` uses the bare `python:3.14-slim` image,
+  which has no fonts and needs none.
 - ESPHome: GPIO3 is both `binary_sensor` and `deep_sleep.wakeup_pin` →
   `allow_other_uses: true` on **both** uses. The C3 has no ext1, so GPIO4 is added
   with `esp_deep_sleep_enable_gpio_wakeup(1ULL << 4, …)` in a lambda right before
@@ -204,4 +242,6 @@ closed 22.1; lid 9.5 tall = LID_T 2 + 7.5 skirt; SKIRT 45.76 × 50.84 (opening �
   committing or pushing. Do not `git init`/commit unless asked.
 - Hardware status: **nothing flashed or printed yet** (see README → Not yet
   verified on hardware). First real-world feedback will decide
-  `--clear-friction`, `OLED_AA_DX`, the OLED header order and the 1.5 s wake guard.
+  `--clear-friction`, `OLED_AA_DX`, the OLED header order, the 1.5 s wake guard,
+  whether the 1.4 mm USB wall prints and seats a plug, and whether the 6 mm
+  engraving is legible.

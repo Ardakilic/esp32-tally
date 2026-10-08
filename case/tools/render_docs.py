@@ -2,8 +2,8 @@
 """Render the README images — software renderer via matplotlib, no GPU/browser:
 
   docs/renders.png           closed case + exploded view with ghost electronics
-  docs/perfboard-layout.png  the 18 x 20 perfboard from above with every
-                             component, pin name and wire
+  docs/perfboard-layout.png  the 50 x 50 (18 x 19 hole) perfboard from above
+                             with every component, pin name and wire
   docs/wiring.png            block schematic (power path + signals)
 
 Usage:  python3 tools/render_docs.py [generate.py flags]
@@ -106,19 +106,21 @@ def render_case(out_path):
 # Left = col 3, right = col 9, rows 0..7 (0 = USB end). Verify on the silkscreen.
 ESP_LEFT = ["GPIO5", "GPIO6", "GPIO7", "GPIO8", "GPIO9", "GPIO10", "GPIO20", "GPIO21"]
 ESP_RIGHT = ["5V", "GND", "3V3", "GPIO4", "GPIO3", "GPIO2", "GPIO1", "GPIO0"]
-OLED_PINS = ["GND", "VCC", "SCL", "SDA"]  # rows 15..18, the usual order — check
+OLED_PINS = ["GND", "VCC", "SCL", "SDA"]  # rows 14..17, the usual order — check
+OLED_ROWS = range(14, 18)
+TACT_ROWS = (10, 12)  # tact pins straddle the body on row 11
 ESP_PIN = {**{n: (3, r) for r, n in enumerate(ESP_LEFT)},
            **{n: (9, r) for r, n in enumerate(ESP_RIGHT)}}
 # wires: (from hole, to hole, label, colour, label position along the wire 0..1)
 WIRES = [
-    ((1, 16), ESP_PIN["3V3"], "VCC -> 3V3", "#d33", 0.5),
-    ((1, 15), ESP_PIN["GND"], "GND", "#222", 0.5),
-    ((1, 17), ESP_PIN["GPIO7"], "SCL -> GPIO7", "#2a2", 0.72),
-    ((1, 18), ESP_PIN["GPIO6"], "SDA -> GPIO6", "#36c", 0.45),
-    ((5, 11), ESP_PIN["GPIO4"], "DOWN -> GPIO4", "#a3c", 0.5),
-    ((5, 13), ESP_PIN["GND"], "GND", "#222", 0.5),
-    ((12, 11), ESP_PIN["GPIO3"], "UP -> GPIO3", "#c73", 0.5),
-    ((12, 13), ESP_PIN["GND"], "GND", "#222", 0.5),
+    ((1, 15), ESP_PIN["3V3"], "VCC -> 3V3", "#d33", 0.5),
+    ((1, 14), ESP_PIN["GND"], "GND", "#222", 0.5),
+    ((1, 16), ESP_PIN["GPIO7"], "SCL -> GPIO7", "#2a2", 0.72),
+    ((1, 17), ESP_PIN["GPIO6"], "SDA -> GPIO6", "#36c", 0.45),
+    ((5, 10), ESP_PIN["GPIO4"], "DOWN -> GPIO4", "#a3c", 0.5),
+    ((5, 12), ESP_PIN["GND"], "GND", "#222", 0.5),
+    ((12, 10), ESP_PIN["GPIO3"], "UP -> GPIO3", "#c73", 0.5),
+    ((12, 12), ESP_PIN["GND"], "GND", "#222", 0.5),
 ]
 
 
@@ -149,11 +151,11 @@ def render_layout(out_path):
             ax.text(x + dx, y, n, ha=ha, va="center", fontsize=6.5, fontweight="bold")
     ax.text(g.ESP_X, boxes["esp32-usb"][1] - 1.0, "ESP32-C3 Super Mini (USB-C pokes through the wall)",
             ha="center", va="top", fontsize=7, color="#333")
-    # tact switches: body + 4 pins (cols 2/5 and 12/15, rows 11/13)
+    # tact switches: body + 4 pins (cols 2/5 and 12/15, rows 10/12)
     for side, cols, name in (("left", (2, 5), "DOWN (-)"), ("right", (12, 15), "UP (+)")):
         rect(f"tact-{side}", fc=(0.9, 0.6, 0.2, 0.35), ec="#a60", lw=1.2)
         for c in cols:
-            for r in (11, 13):
+            for r in TACT_ROWS:
                 ax.add_patch(Circle(g.hole(c, r), 0.7, fc="#fff", ec="#a60", lw=1.0))
         x, y = g.TACT_XY[0 if side == "left" else 1]
         ax.text(x, y - 4.5, name, ha="center", va="top", fontsize=7, fontweight="bold", color="#a60")
@@ -163,12 +165,12 @@ def render_layout(out_path):
     ax.add_patch(Rectangle((g.WIN_XY[0] - g.OLED_AA[0] / 2, g.WIN_XY[1] - g.OLED_AA[1] / 2),
                            *g.OLED_AA, fc="#9cf", ec="none", alpha=0.9))
     ax.text(g.WIN_XY[0], g.WIN_XY[1], "0.91\" OLED active area", ha="center", va="center", fontsize=6.5)
-    for r, n in zip(range(15, 19), OLED_PINS):
+    for r, n in zip(OLED_ROWS, OLED_PINS):
         x, y = g.hole(1, r)
         ax.add_patch(Circle((x, y), 0.7, fc="#ffd", ec="#248", lw=1.0))
         ax.text(x + 1.1, y, n, ha="left", va="center", fontsize=6, fontweight="bold", color="#248")
-    ax.text(g.hole(1, 18)[0], g.hole(1, 18)[1] + 1.6, "OLED header\n(check order)",
-            ha="left", va="bottom", fontsize=6, color="#248")
+    x, y = g.hole(1, OLED_ROWS[-1])
+    ax.text(x, y + 1.6, "OLED header\n(check order)", ha="left", va="bottom", fontsize=6, color="#248")
     # wires
     for a, b, label, color, f in WIRES:
         (x0, y0), (x1, y1) = g.hole(*a), g.hole(*b)
@@ -185,11 +187,12 @@ def render_layout(out_path):
     ax.set_xlim(-hw - 4, hw + 30)
     ax.set_ylim(-hl - 7, hl + 4)
     ax.set_aspect("equal")
-    ax.set_xlabel("X (mm) — viewed from above, component side")
+    ax.set_xlabel("X (mm) — viewed from above, component side (the bare face; solder pads underneath)")
     ax.set_ylabel("Y (mm) — Y+ = display end")
-    ax.set_title(f"Perfboard layout — {g.PCB_COLS} x {g.PCB_ROWS} holes, "
-                 f"{g.PCB_W:.1f} x {g.PCB_L:.1f} mm. GND wires black. "
-                 "ESP32 pin names: verify against your board's silkscreen", fontsize=9)
+    ax.set_title(f"Perfboard layout — {g.PCB_W:.0f} x {g.PCB_L:.0f} mm single-sided board, "
+                 f"{g.PCB_COLS} x {g.PCB_ROWS} holes (Özdisan 5x5 perfboard, used whole).\n"
+                 "GND wires black. ESP32 pin names: verify against your board's silkscreen", fontsize=9)
+    ax.text(-hw, -hl - 5.5, f"Özdisan 5x5 perfboard: {g.PCB_URL}", fontsize=6, color="#777", va="top")
     ax.grid(alpha=0.15)
     fig.patch.set_facecolor("white")
     plt.tight_layout()

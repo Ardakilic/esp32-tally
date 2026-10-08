@@ -246,7 +246,8 @@ function main(THREE) {
     $("title").textContent = brand;
     $("subtitle").textContent = rest.join(" — ") || "case preview";
   }
-  const ROWS = { closed: "Closed", tolerances: "Tolerances", shell: "Shell" };
+  const ROWS = { closed: "Closed", tolerances: "Tolerances", shell: "Shell",
+                 engraving: "Engraving" };
   $("dims").innerHTML = "<b>Dimensions</b>" +
     Object.entries(ROWS).filter(([k]) => DATA.dims[k])
       .map(([k, l]) => `<div>${l}: <strong>${DATA.dims[k]}</strong></div>`)

@@ -10,8 +10,9 @@ radio, and an **ESPHome** one that exposes the count to Home Assistant. Everythi
 source through Docker + `make`; nothing is installed on the host.
 
 ![Tally counter case — closed and exploded](case/docs/renders.png)
-*Closed (58.0 × 58.4 × 22.1 mm, both USB-C ports at the near end) and exploded,
-with perfboard, battery, TP4056, ESP32 and OLED as ghosts.*
+*Closed (58.0 × 57.6 × 22.1 mm, both USB-C ports at the near end, "Grindarr"
+engraved in the lid) and exploded, with perfboard, battery, TP4056, ESP32 and OLED
+as ghosts.*
 
 **Interactive preview:** [ardakilic.github.io/esp32-tally](https://ardakilic.github.io/esp32-tally/)
 — or open [`case/preview.html`](case/preview.html) locally (self-contained, works offline).
@@ -29,7 +30,8 @@ with perfboard, battery, TP4056, ESP32 and OLED as ghosts.*
   own USB-C is for flashing only and sits behind the lid (see [Power notes](#power-notes)).
 - ESPHome variant adds Home Assistant entities: number **Tally Count** (settable),
   button **Reset Tally**, switch **Keep Awake** (blocks the idle sleep so OTA can run).
-- Case: friction-fit lid, no screws, no supports, 4 parts, 28 cm³ of plastic.
+- Case: friction-fit lid, no screws, no supports, 4 parts, 26 cm³ of plastic; the
+  lid is engraved "Grindarr" by default — any text or none ([Engraving](#engraving)).
 
 ## Bill of materials
 
@@ -41,7 +43,7 @@ with perfboard, battery, TP4056, ESP32 and OLED as ghosts.*
 | TP4056 USB-C charger module | the common 17 × 28 mm board **with** DW01 protection (the variant with OUT+/OUT− pads); 1 A default |
 | SS12D00 slide switch | 3-pin, 1P2T, 8.8 × 3.9 × 3.5 mm body, 2 mm travel |
 | 1S LiPo pouch, 503450 | 34 × 50 × 5 mm, 1000 mAh, with PCM and JST-PH lead; other sizes via [`--battery`](#fit-tuning) (T ≤ 7 mm) |
-| Perfboard, 2.54 mm pitch | cut to **18 × 20 holes** (45.7 × 50.8 mm) from a 5 × 7 cm board |
+| [Özdisan 5 × 5 cm perfboard](https://www.ozdisan.com/p/prototipleme-devreleri-621/ozd-arduino-delkl-pertnaks-5x5-643014) | single-sided, 50 × 50 mm, **18 × 19 holes** at 2.54 mm, used **whole** — no cutting |
 | Male pin headers | 2 × 8 for the Super Mini |
 | Hook-up wire | thin silicone wire for the dozen connections below |
 | 4 printed parts | base, lid, cap "+", cap "−" ([Case](#case)) |
@@ -66,14 +68,22 @@ with perfboard, battery, TP4056, ESP32 and OLED as ghosts.*
 
 ![Perfboard layout](case/docs/perfboard-layout.png)
 
-The perfboard is cut **between** hole rows to 18 columns × 20 rows (45.7 × 50.8 mm,
-so each edge is half a pitch past the last hole) and drops onto the ledge inside
-the case. Column 0 / row 0 is the bottom-left corner when the display end is up.
+The perfboard is an [Özdisan 5 × 5 cm single-sided board](https://www.ozdisan.com/p/prototipleme-devreleri-621/ozd-arduino-delkl-pertnaks-5x5-643014)
+used **whole**: 50 × 50 mm, 18 × 19 holes at 2.54 mm, no cutting. It drops onto the
+ledge inside the case with the 19-hole direction along the length (Y, towards the
+display end) and the 18-hole direction across (X). The hole grid is centred on the
+board — outer row centres 2.14 mm from the Y edges, outer column centres 3.41 mm
+from the X edges. Single-sided means the square solder pads are on one face only:
+components sit on the bare face, pads underneath. The drawing above is the
+**component-side view**, so hole positions appear mirrored once you flip the board
+to solder. Column 0 / row 0 is the bottom-left corner when the display end is up.
 The Super Mini's two pin rows go into **columns 3 and 9, rows 0…7**, USB-C at the
-bottom edge (it pokes 1.5 mm past the board edge into a pocket in the case wall).
-The two tact switches are centred at **X ±12.7 mm on row 12** — their four legs land
-in columns 2 & 5 (DOWN) and 12 & 15 (UP), rows 11 & 13. The OLED's 4-pin header
-goes into **column 1, rows 15…18**, with the module extending to the right across
+bottom edge; because row 0 sits only 2.14 mm from the board edge the receptacle
+face ends up just 1.72 mm past the perfboard, so the case wall is relieved from
+the outside to a 1.4 mm thin wall there and the port sits 0.2 mm behind it.
+The two tact switches are centred at **X ±12.7 mm on row 11** — their four legs land
+in columns 2 & 5 (DOWN) and 12 & 15 (UP), rows 10 & 12. The OLED's 4-pin header
+goes into **column 1, rows 14…17**, with the module extending to the right across
 the top of the board. Pin names in the drawing follow the common Super Mini
 silkscreen — **verify against your board** before soldering; OLED header order
 varies (GND VCC SCL SDA on most modules).
@@ -182,27 +192,34 @@ same constants drive the README images and the geometry self-test.
 
 | STL | Size (mm) | Volume | Print orientation |
 |---|---|---|---|
-| [`case/stl/tally-base.stl`](case/stl/tally-base.stl) | 58.0 × 58.4 × 20.1 | 19.5 cm³ | upright, as exported |
-| [`case/stl/tally-lid.stl`](case/stl/tally-lid.stl) | 58.0 × 58.4 × 9.5 | 7.6 cm³ | as exported (top face down) |
+| [`case/stl/tally-base.stl`](case/stl/tally-base.stl) | 58.0 × 57.6 × 20.1 | 17.3 cm³ | upright, as exported |
+| [`case/stl/tally-lid.stl`](case/stl/tally-lid.stl) | 58.0 × 57.6 × 9.5 | 7.4 cm³ | as exported (top face down) |
 | [`case/stl/tally-cap-plus.stl`](case/stl/tally-cap-plus.stl) | 11 × 11 × 6 | 0.4 cm³ | on its flange, as exported |
 | [`case/stl/tally-cap-minus.stl`](case/stl/tally-cap-minus.stl) | 11 × 11 × 6 | 0.4 cm³ | on its flange, as exported |
 
-Closed: **58.0 × 58.4 × 22.1 mm**. Shell 2.0 mm walls / floor / lid plate, 1.2 mm lid
-skirt, 4 mm outer corner radius. Features: friction-fit lid whose skirt slides
-*inside* the frame and clamps the perfboard onto an internal ledge (0.28 mm
-clearance per side); 27 × 9 mm OLED window; two Ø8.4 mm cap holes; an open-top slot
-in the bottom wall for the ESP32's USB-C, closed by a notch in the lid skirt
-(left, flash/debug); a USB-C window at floor level for the TP4056 (right, charge);
-slide-switch slot on the right wall; 10 × 1.5 mm pry notch at the display end.
+Closed: **58.0 × 57.6 × 22.1 mm** (frame opening 50.6 × 50.6, cavity 54.0 × 53.6).
+Shell 2.0 mm walls / floor / lid plate, 1.2 mm lid skirt, 4 mm outer corner radius.
+Features: friction-fit lid whose skirt slides *inside* the frame and clamps the
+perfboard onto an internal ledge (0.28 mm clearance per side); 27 × 9 mm OLED
+window; two Ø8.4 mm cap holes; "Grindarr" engraved 0.6 mm into the lid top
+([Engraving](#engraving)); an open-top slot in the bottom wall for the ESP32's
+USB-C, closed by a notch in the lid skirt (left, flash/debug) — the wall's outer
+face is relieved there to a 1.4 mm thin wall, 19 mm wide, and the lid plate is
+notched over it so a plug reaches the port; a USB-C window at floor level for the
+TP4056 (right, charge); slide-switch slot on the right wall; 10 × 1.5 mm pry notch
+at the display end.
 
 ### Printing
 
 - 0.2 mm layers, PLA or PETG, 0.4 mm nozzle.
 - **No supports** in the exported orientations — the only overhang is the ledge's
-  underside inside the base, 1.5 mm (ends) to 3.8 mm (sides) wide, which prints
+  underside inside the base, 1.5 mm (ends) to 1.7 mm (sides) wide, which prints
   fine at 0.2 mm layers.
-- Base upright; lid as exported (top face on the bed, so the window edge and the
-  outer face are clean); caps on their flanges.
+- The **thin 1.4 mm wall around the ESP32 port is intentional** (plug relief in the
+  bottom wall's outer face, 19 mm wide, from 2 mm above the perfboard up to the
+  rim) — don't thicken it in the slicer.
+- Base upright; lid as exported (top face on the bed, so the window edge, the
+  engraving and the outer face are clean); caps on their flanges.
 
 ### Assembly
 
@@ -214,8 +231,8 @@ slide-switch slot on the right wall; 10 × 1.5 mm pry notch at the display end.
 3. **Slide switch**: drop it between its two ribs from the inside, handle through
    the slot in the right wall; a dab of hot glue holds it.
 4. Solder and route the wires (table above); keep them below the ledge.
-5. **Perfboard** onto the ledge, ESP32 USB-C end towards the bottom edge, so the
-   receptacle sits in its wall slot.
+5. **Perfboard** onto the ledge, pads down, ESP32 USB-C end towards the bottom
+   edge, so the receptacle sits in its wall slot.
 6. **Caps** into the lid from below — "+" on the right, "−" on the left (as held,
    display up).
 7. **Lid** on: the skirt notch goes over the ESP32 end; press down until the skirt
@@ -226,25 +243,45 @@ foam pad under the OLED's free end before closing.
 
 ### Fit tuning
 
-Printers and kits vary; the three fit parameters are command-line flags shared by
-the generator, the image renderer and the verifier:
+Printers and kits vary; the three fit parameters (and the lid engraving) are
+command-line flags shared by the generator, the image renderer and the verifier:
 
 | Flag | Default | Controls |
 |---|---|---|
 | `--clear-friction` | 0.28 mm | lid skirt clearance to the frame per side (filtarr's calibrated value); tune in ±0.04 steps |
 | `--tact-height` | 5.0 mm | tact switch height, PCB top to plunger top — 4.3 / 5 / 6 are fine, ≤ 6.0 with the default 7.5 mm lid clearance |
 | `--battery` | 34x52x6 | battery pouch envelope W×L×T incl. tabs and swelling; T ≤ 7 |
+| `--engraving TEXT` | `Grindarr` | text engraved into the lid top ([Engraving](#engraving)); shortcut `make case ENGRAVING="My Text"` |
+| `--omit-engraving` | off | plain lid top, no text; shortcut `make case OMIT_ENGRAVING=1` |
 
 ```bash
 make case GEN_ARGS="--clear-friction 0.32"                  # lid too tight
 make case GEN_ARGS="--tact-height 4.3"                      # shorter switches
 make case GEN_ARGS="--battery 30x40x5"                      # smaller cell
+make case ENGRAVING="My Text"                               # other lid text
+make case OMIT_ENGRAVING=1 GEN_ARGS="--tact-height 4.3"     # plain lid; combinable
 make case-verify GEN_ARGS="--clear-friction 0.32 --tact-height 4.3"   # check before printing
 ```
 
 Every other dimension (walls, PCB_Z 9, LID_CLEAR 7.5, window 27 × 9, switch
 position SW_Y 14, …) is a named constant with a why-comment at the top of
 [`case/generate.py`](case/generate.py).
+
+### Engraving
+
+The lid top carries **"Grindarr"** by default: Liberation Sans Bold, 6 mm cap
+height, recessed 0.6 mm (3 layers), centred at (0, −13) in the free band between
+the button caps and the USB-port edge, reading upright with the display at the
+top. The lid prints top-face-down, so the recess sits on the bed and comes out
+crisp. `--engraving TEXT` / `--omit-engraving` (or the `ENGRAVING=` /
+`OMIT_ENGRAVING=1` make shortcuts, which append to `GEN_ARGS`) go to
+`generate.py`, `verify.py` and `render_docs.py` alike. Longer text auto-shrinks
+below 6 mm to stay inside the band; empty text or a glyph the font has no outline
+for is rejected (`p.error`). The generator's summary line — repeated in the
+preview's Dimensions panel — reads `Engraving: "Grindarr" (6 mm, 0.6 deep)` or
+`Engraving: omitted`. The output is `stl/tally-lid.stl` either way; the committed
+lid, renders and preview carry "Grindarr". The font comes from `fonts-liberation`
+in the case Docker image.
 
 ## Interactive preview
 
@@ -256,8 +293,8 @@ four STLs embedded, no internet needed), open it in any browser. Lift the lid an
 with the **Explode** slider, toggle each part, switch on **X-ray lid** or the ghost
 electronics (perfboard, battery, TP4056, ESP32, OLED, slide switch), and download
 the exact STLs from the **Print these four** list; the Dimensions panel repeats the
-tolerance and shell summary `generate.py` prints, so a tuned build shows its
-`GEN_ARGS`. The landing page ([`index.html`](index.html)) links the preview, the
+tolerance, shell and engraving summary `generate.py` prints, so a tuned build shows
+its `GEN_ARGS` (the lid's engraving is in the embedded STL). The landing page ([`index.html`](index.html)) links the preview, the
 STLs, the README images and both firmware folders.
 
 ## Regenerating everything
@@ -268,8 +305,8 @@ make                  # case + plain + esphome
 
 | Target | Does | Output |
 |---|---|---|
-| `make case` | build image, `generate.py`, `tools/render_docs.py` | `case/stl/*.stl`, `case/preview.html`, `index.html`, `case/docs/*.png` |
-| `make case-verify` | 59 geometry checks on in-memory builds, exit 1 on failure | PASS/FAIL table |
+| `make case` | build image, `generate.py`, `tools/render_docs.py`; `ENGRAVING="…"` / `OMIT_ENGRAVING=1` set the lid text | `case/stl/*.stl`, `case/preview.html`, `index.html`, `case/docs/*.png` |
+| `make case-verify` | 68 geometry checks on in-memory builds (64 with `--omit-engraving`), exit 1 on failure | PASS/FAIL table |
 | `make vendor` | fetch the latest three.js module build (stdlib-only, bare `python:3.14-slim`) | `case/vendor/three.{module,core}.min.js`, `THREE_VERSION` |
 | `make plain` | build image, `pio run`, copy the factory image | `firmware/plain/build/tally-plain.factory.bin` |
 | `make plain-test` | state-machine self-test in `gcc:14` | `OK` |
@@ -280,7 +317,8 @@ make                  # case + plain + esphome
 | `make clean` | removes `case/stl case/docs case/preview.html index.html firmware/plain/.pio firmware/plain/build firmware/esphome/.esphome` | — |
 
 Pinned images: `python:3.14-slim` + [`case/requirements.txt`](case/requirements.txt)
-(the exact wheels the committed STLs were triangulated with), `python:3.12-slim` +
+(the exact wheels the committed STLs were triangulated with) + Debian's
+`fonts-liberation` for the lid engraving, `python:3.12-slim` +
 platformio 6.2.0, `ghcr.io/esphome/esphome:2026.9.1`, `gcc:14`. Caches live in two
 named Docker volumes, never on the host: **`esp32-tally-pio`** (PlatformIO core —
 pioarduino platform, Xtensa/RISC-V toolchain, Arduino framework, U8g2) and
@@ -291,14 +329,16 @@ if you want them gone).
 
 `case/stl/`, `case/docs/`, `case/preview.html`, `index.html` and `case/vendor/` are
 **committed and never hand-edited**: change `generate.py` (or
-`case/preview_template.html`), run `make case` + `make case-verify`, commit the
-regenerated files together with the change; `make vendor` only when you want a newer
-three.js. `make case-verify` ([`case/tools/verify.py`](case/tools/verify.py))
-rebuilds every part in memory and checks: watertightness; bounding boxes; skirt =
-opening − 2 × clearance; rays through the OLED window, both cap holes, both USB-C
-openings and the switch slot; that the battery, TP4056, ESP32, OLED and switch
-ghosts do not intersect the shell; and the cap-to-hole play. Pass it the same
-`GEN_ARGS` as `make case`.
+`case/preview_template.html`), run `make case` + `make case-verify` (or
+`make case ENGRAVING="…"` for another lid text), commit the regenerated files
+together with the change; `make vendor` only when you want a newer three.js.
+`make case-verify` ([`case/tools/verify.py`](case/tools/verify.py)) rebuilds every
+part in memory and checks: watertightness; bounding boxes; skirt = opening − 2 ×
+clearance; rays through the OLED window, both cap holes, both USB-C openings and
+the switch slot; the 1.4 mm wall and port recess at the ESP32 USB-C; that the
+battery, TP4056, ESP32, OLED and switch ghosts do not intersect the shell; the
+cap-to-hole play; and the engraving's depth and footprint (or a plain top with
+`--omit-engraving`). Pass it the same `GEN_ARGS` as `make case`.
 
 ## Verified part geometry
 
@@ -314,7 +354,7 @@ Dimensions the case is built around (all in `generate.py` with their sources):
   [family datasheet (LCSC)](https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2201121200_MICRONE-Nanjing-Micro-One-Elec-ME6211C25M5G_C2835813.pdf).
 - **6 × 6 mm tact switch** — Omron B3F family: body 6 × 6, plunger Ø3.5, heights
   4.3 / 5.0 / 6.0 / 7.0 mm, legs 6.5 × 4.5 mm apart → 3 × 2 perfboard pitches
-  (columns 2 & 5 / 12 & 15, rows 11 & 13) —
+  (columns 2 & 5 / 12 & 15, rows 10 & 12) —
   [B3F datasheet](https://omronfs.omron.com/en_US/ecb/products/pdf/en-b3f.pdf).
 - **SS12D00 slide switch** — body 8.8 × 3.9 × 3.5 mm, handle 1.5 mm, travel 2.0 mm
   (slot 4.0 × 2.0 mm incl. 0.5 mm play) —
@@ -327,7 +367,11 @@ Dimensions the case is built around (all in `generate.py` with their sources):
   [module manual](https://shillehtek.com/blogs/shillehtek-product-manuals/tp4056-1a-lipo-battery-charging-board-type-c-with-current-protection-manual).
 - **503450 LiPo** — 34 × 50 × 5 mm nominal, modelled as 34 × 52 × 6 (PCM tab +
   1 mm swelling) with 0.5 mm air to every wall.
-- **Perfboard** — 2.54 mm pitch, 1.6 mm FR4, 18 × 20 holes → 45.72 × 50.8 mm.
+- **Perfboard** — Özdisan 5 × 5 cm single-sided board, used whole: 50 × 50 mm,
+  1.6 mm FR4, 18 × 19 holes at 2.54 mm centred on the board (outer row centres
+  2.14 mm from the Y edges, outer column centres 3.41 mm from the X edges), square
+  pads on one face —
+  [product page (Özdisan)](https://www.ozdisan.com/p/prototipleme-devreleri-621/ozd-arduino-delkl-pertnaks-5x5-643014).
 
 ## Not yet verified on hardware
 
@@ -348,6 +392,12 @@ state machine. Open points, in the order they'd bite:
 - **OLED header order** — GND VCC SCL SDA assumed in the drawings.
 - **TP4056 variant size** — 17 × 28 mm boards are the norm, some USB-C variants
   are 17 × 26 or have the receptacle further in; the wall pocket is 1 mm deep.
+- **Thin 1.4 mm wall at the ESP32 USB-C** — the port face ends 0.2 mm behind it;
+  whether every cable's overmold seats, and whether the wall prints cleanly at
+  that thickness, is unprinted.
+- **Engraving legibility** — 6 mm Liberation Sans Bold, 0.6 mm deep, printed
+  face-down on the bed; counters of the small letters are untested with a 0.4 mm
+  nozzle.
 
 Found something? Open an issue with the measurement.
 
