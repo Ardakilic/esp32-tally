@@ -30,7 +30,8 @@ as ghosts.*
   own USB-C is for flashing only and sits behind the lid (see [Power notes](#power-notes)).
 - ESPHome variant adds Home Assistant entities: number **Tally Count** (settable),
   button **Reset Tally**, switch **Keep Awake** (blocks the idle sleep so OTA can run).
-- Case: friction-fit lid, no screws, no supports, 4 parts, 26 cm³ of plastic; the
+- Case: snap-fit lid (four detents, bite tunable with [`--snap-bite`](#fit-tuning),
+  `0` = plain friction fit), no screws, no supports, 4 parts, 26 cm³ of plastic; the
   lid is engraved "Grindarr" by default — any text or none ([Engraving](#engraving)).
 
 ## Bill of materials
@@ -192,15 +193,19 @@ same constants drive the README images and the geometry self-test.
 
 | STL | Size (mm) | Volume | Print orientation |
 |---|---|---|---|
-| [`case/stl/tally-base.stl`](case/stl/tally-base.stl) | 58.0 × 57.6 × 20.1 | 17.3 cm³ | upright, as exported |
+| [`case/stl/tally-base.stl`](case/stl/tally-base.stl) | 58.0 × 57.6 × 20.1 | 17.2 cm³ | upright, as exported |
 | [`case/stl/tally-lid.stl`](case/stl/tally-lid.stl) | 58.0 × 57.6 × 9.5 | 7.4 cm³ | as exported (top face down) |
 | [`case/stl/tally-cap-plus.stl`](case/stl/tally-cap-plus.stl) | 11 × 11 × 6 | 0.4 cm³ | on its flange, as exported |
 | [`case/stl/tally-cap-minus.stl`](case/stl/tally-cap-minus.stl) | 11 × 11 × 6 | 0.4 cm³ | on its flange, as exported |
 
 Closed: **58.0 × 57.6 × 22.1 mm** (frame opening 50.6 × 50.6, cavity 54.0 × 53.6).
 Shell 2.0 mm walls / floor / lid plate, 1.2 mm lid skirt, 4 mm outer corner radius.
-Features: friction-fit lid whose skirt slides *inside* the frame and clamps the
-perfboard onto an internal ledge (0.28 mm clearance per side); 27 × 9 mm OLED
+Features: snap-fit lid whose skirt slides *inside* the frame (0.28 mm clearance
+per side) and clamps the perfboard onto an internal ledge — four 8 mm snap detents
+on the skirt's outer face (X− and X+ walls at Y = 0, Y+ wall at X = 0, Y− wall
+right of the USB notch at X = +14.2) click into closed 0.5 mm grooves in the
+frame's inner face; the crest bites 0.4 mm past the frame, both ramps are 45° so
+the lid still pries off, and `--snap-bite 0` gives the plain friction fit; 27 × 9 mm OLED
 window; two Ø8.4 mm cap holes; "Grindarr" engraved 0.6 mm into the lid top
 ([Engraving](#engraving)); an open-top slot in the bottom wall for the ESP32's
 USB-C, closed by a notch in the lid skirt (left, flash/debug) — the wall's outer
@@ -211,10 +216,14 @@ at the display end.
 
 ### Printing
 
-- 0.2 mm layers, PLA or PETG, 0.4 mm nozzle.
-- **No supports** in the exported orientations — the only overhang is the ledge's
-  underside inside the base, 1.5 mm (ends) to 1.7 mm (sides) wide, which prints
-  fine at 0.2 mm layers.
+- 0.2 mm layers, 0.4 mm nozzle. **PETG preferred**: the lid skirt flexes ≈0.7 mm
+  riding over the snap bumps. For PLA print a shallower bite,
+  `make case GEN_ARGS="--snap-bite 0.3"` (or `--snap-bite 0` for the plain friction
+  fit).
+- **No supports** in the exported orientations — the overhangs are the ledge's
+  underside inside the base, 1.5 mm (ends) to 1.7 mm (sides) wide, and the four
+  snap-groove ceilings (0.5 mm deep); both print fine at 0.2 mm layers. The lid's
+  snap bumps are 45° ramps and print face-down as before.
 - The **thin 1.4 mm wall around the ESP32 port is intentional** (plug relief in the
   bottom wall's outer face, 19 mm wide, from 2 mm above the perfboard up to the
   rim) — don't thicken it in the slicer.
@@ -235,20 +244,22 @@ at the display end.
    edge, so the receptacle sits in its wall slot.
 6. **Caps** into the lid from below — "+" on the right, "−" on the left (as held,
    display up).
-7. **Lid** on: the skirt notch goes over the ESP32 end; press down until the skirt
-   is fully home.
+7. **Lid** on: the skirt notch goes over the ESP32 end; press down until it clicks
+   on all four sides.
 
-Open it with a coin in the pry notch at the display end. Optionally stick a 3 mm
-foam pad under the OLED's free end before closing.
+Open it by lifting with a coin in the pry notch at the display end — the detents'
+release ramps are 45°, so the lid pries off. Optionally stick a 3 mm foam pad under
+the OLED's free end before closing.
 
 ### Fit tuning
 
-Printers and kits vary; the three fit parameters (and the lid engraving) are
+Printers and kits vary; the four fit parameters (and the lid engraving) are
 command-line flags shared by the generator, the image renderer and the verifier:
 
 | Flag | Default | Controls |
 |---|---|---|
 | `--clear-friction` | 0.28 mm | lid skirt clearance to the frame per side (filtarr's calibrated value); tune in ±0.04 steps |
+| `--snap-bite` | 0.4 mm | how far the four lid snap detents bite past the frame's inner face (PETG); PLA ≈ 0.3; `0` = no detents, the plain friction fit (STLs byte-identical to the pre-snap case) |
 | `--tact-height` | 5.0 mm | tact switch height, PCB top to plunger top — 4.3 / 5 / 6 are fine, ≤ 6.0 with the default 7.5 mm lid clearance |
 | `--battery` | 34x52x6 | battery pouch envelope W×L×T incl. tabs and swelling; T ≤ 7 |
 | `--engraving TEXT` | `Grindarr` | text engraved into the lid top ([Engraving](#engraving)); shortcut `make case ENGRAVING="My Text"` |
@@ -256,6 +267,7 @@ command-line flags shared by the generator, the image renderer and the verifier:
 
 ```bash
 make case GEN_ARGS="--clear-friction 0.32"                  # lid too tight
+make case GEN_ARGS="--snap-bite 0.3"                        # PLA lid; 0 = no detents
 make case GEN_ARGS="--tact-height 4.3"                      # shorter switches
 make case GEN_ARGS="--battery 30x40x5"                      # smaller cell
 make case ENGRAVING="My Text"                               # other lid text
@@ -264,7 +276,8 @@ make case-verify GEN_ARGS="--clear-friction 0.32 --tact-height 4.3"   # check be
 ```
 
 Every other dimension (walls, PCB_Z 9, LID_CLEAR 7.5, window 27 × 9, switch
-position SW_Y 14, …) is a named constant with a why-comment at the top of
+position SW_Y 14, snap bump SNAP_LEN 8 / SNAP_CREST 0.8, …) is a named constant
+with a why-comment at the top of
 [`case/generate.py`](case/generate.py).
 
 ### Engraving
@@ -293,7 +306,7 @@ four STLs embedded, no internet needed), open it in any browser. Lift the lid an
 with the **Explode** slider, toggle each part, switch on **X-ray lid** or the ghost
 electronics (perfboard, battery, TP4056, ESP32, OLED, slide switch), and download
 the exact STLs from the **Print these four** list; the Dimensions panel repeats the
-tolerance, shell and engraving summary `generate.py` prints, so a tuned build shows
+tolerance, snap, shell and engraving summary `generate.py` prints, so a tuned build shows
 its `GEN_ARGS` (the lid's engraving is in the embedded STL). The landing page ([`index.html`](index.html)) links the preview, the
 STLs, the README images and both firmware folders.
 
@@ -306,7 +319,7 @@ make                  # case + plain + esphome
 | Target | Does | Output |
 |---|---|---|
 | `make case` | build image, `generate.py`, `tools/render_docs.py`; `ENGRAVING="…"` / `OMIT_ENGRAVING=1` set the lid text | `case/stl/*.stl`, `case/preview.html`, `index.html`, `case/docs/*.png` |
-| `make case-verify` | 68 geometry checks on in-memory builds (64 with `--omit-engraving`), exit 1 on failure | PASS/FAIL table |
+| `make case-verify` | 105 geometry checks on in-memory builds (70 with `--snap-bite 0`, 101 with `--omit-engraving`), exit 1 on failure | PASS/FAIL table |
 | `make vendor` | fetch the latest three.js module build (stdlib-only, bare `python:3.14-slim`) | `case/vendor/three.{module,core}.min.js`, `THREE_VERSION` |
 | `make plain` | build image, `pio run`, copy the factory image | `firmware/plain/build/tally-plain.factory.bin` |
 | `make plain-test` | state-machine self-test in `gcc:14` | `OK` |
@@ -337,8 +350,11 @@ part in memory and checks: watertightness; bounding boxes; skirt = opening − 2
 clearance; rays through the OLED window, both cap holes, both USB-C openings and
 the switch slot; the 1.4 mm wall and port recess at the ESP32 USB-C; that the
 battery, TP4056, ESP32, OLED and switch ghosts do not intersect the shell; the
-cap-to-hole play; and the engraving's depth and footprint (or a plain top with
-`--omit-engraving`). Pass it the same `GEN_ARGS` as `make case`.
+cap-to-hole play; the engraving's depth and footprint (or a plain top with
+`--omit-engraving`); and, per snap site, the crest protrusion, groove depth,
+seated Z/along-the-wall margins, remaining frame wall, clearance to the USB
+relief and skirt notch, plus that `--snap-bite 0` reproduces the no-snap lid and
+base exactly. Pass it the same `GEN_ARGS` as `make case`.
 
 ## Verified part geometry
 
@@ -387,6 +403,10 @@ state machine. Open points, in the order they'd bite:
   not measured boot time.
 - **Friction fit 0.28 mm** is filtarr's calibrated value on a different, larger
   part; expect to tune `--clear-friction`.
+- **Snap detents** — 0.4 mm bite, 8 mm bumps, 45° ramps: click force, pry-off
+  force and skirt durability (≈0.7 mm flex per close) are unprinted, in PETG and
+  PLA alike; the PLA value `--snap-bite 0.3` is reasoning, not measurement.
+  `--snap-bite 0` falls back to the friction-only lid.
 - **OLED window offset** `OLED_AA_DX` 3.7 mm (active area vs PCB centre) — measure
   your module; it differs between 0.91" boards.
 - **OLED header order** — GND VCC SCL SDA assumed in the drawings.

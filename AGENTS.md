@@ -13,8 +13,9 @@ Instructions for AI coding agents working in this repo live in
   UP GPIO3, DOWN GPIO4, OLED SDA GPIO6 / SCL GPIO7 @0x3C. The ESP32's `5V` pin is
   USB VBUS — the case hides that port on purpose; don't "fix" it.
 - Case fit parameters are CLI flags, not constants to edit: `--clear-friction`
-  0.28, `--tact-height` 5.0, `--battery 34x52x6`, passed as
-  `make case GEN_ARGS="..."` — the same `GEN_ARGS` must go to `make case-verify`.
+  0.28, `--snap-bite` 0.4 (PLA ~0.3, `0` = friction-only lid), `--tact-height`
+  5.0, `--battery 34x52x6`, passed as `make case GEN_ARGS="..."` — the same
+  `GEN_ARGS` must go to `make case-verify`.
   Lid text likewise: `make case ENGRAVING="My Text"` / `OMIT_ENGRAVING=1` (they
   append `--engraving` / `--omit-engraving` to `GEN_ARGS`).
 - The perfboard is an Özdisan 5 × 5 cm single-sided board used whole (50 × 50 mm,
@@ -24,7 +25,7 @@ Instructions for AI coding agents working in this repo live in
   bumping a pin re-triangulates every STL — regenerate, verify, commit together.
 
 ```bash
-make case-verify     # 68 geometry checks (64 with --omit-engraving), exit 1 on failure — run before committing case changes
+make case-verify     # 105 geometry checks (70 with --snap-bite 0, 101 with --omit-engraving), exit 1 on failure — run before committing case changes
 make case            # regenerate case/stl + case/preview.html + index.html + case/docs
 make case ENGRAVING="My Text"   # other lid text; OMIT_ENGRAVING=1 for a plain lid
 make vendor          # refresh three.js in case/vendor/ (only when you want a newer release)

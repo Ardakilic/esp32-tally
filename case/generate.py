@@ -7,8 +7,8 @@ Four print-ready STLs for a two-part case plus two button caps:
   stl/tally-base.stl       tub: battery + TP4056 + slide switch below, the
                            50 x 50 perfboard on a ledge above
   stl/tally-lid.stl        plate with OLED window, two cap holes and the name
-                           engraved on top; its skirt slides inside the frame
-                           and clamps the perfboard
+                           engraved on top; its skirt slides inside the frame,
+                           clicks into four grooves and clamps the perfboard
   stl/tally-cap-plus.stl   button cap, embossed "+" (right button, UP)
   stl/tally-cap-minus.stl  button cap, embossed "-" (left button, DOWN)
 
@@ -32,7 +32,7 @@ the lid from below -> lid. Print the base upright, the lid upside-down on its
 top face, the caps upright on their flanges; no supports needed.
 
 Usage:
-  python3 generate.py [--clear-friction MM] [--tact-height MM]
+  python3 generate.py [--clear-friction MM] [--snap-bite MM] [--tact-height MM]
                       [--battery WxLxT] [--engraving TEXT | --omit-engraving]
 
 Fit tolerances are CLI flags (defaults below), so they can be tuned per
@@ -138,6 +138,18 @@ SYMBOL_BAR = (4.0, 1.0)
 
 RIB_T, RIB_H = 1.2, 5.0  # battery/TP4056 divider rib and the TP stop block
 PRY_W, PRY_H = 10.0, 1.5  # pry notch in the Y+ wall top edge
+
+# Lid snap detents: four bumps on the skirt's outer face click into grooves in
+# the frame's inner face, so a lid-first pickup or an inverted counter does not
+# shed the lid (the skirt alone is a friction fit that also clamps the
+# perfboard). Both ramps are 45 deg, so the pry notch still releases it and
+# the flipped lid prints them without support. --snap-bite 0 = friction only.
+SNAP_BITE = 0.4        # crest past the frame's inner face: PETG; PLA ~0.3 (--snap-bite)
+SNAP_LEN = 8.0         # bump length along the wall
+SNAP_Z0 = 0.5          # bump root above the skirt bottom, off the perfboard edge
+SNAP_CREST = 0.8       # flat crest between the two 45 deg ramps
+SNAP_GROOVE_CLEAR = 0.1  # groove deeper than the bite: the crest never bottoms out
+SNAP_MIN_WALL = 1.0    # frame wall that must remain behind a groove
 USB_CUT_W = 10.0       # USB-C openings: 9 mm shell + 0.5 mm per side
 USB_CUT_PAD = 1.0      # extra opening height (0.5 below, 0.5 above the shell)
 QS = 24                # quad segments for shapely buffers (corner smoothness)
@@ -163,6 +175,7 @@ def derive():
     global BAT_X0, TP_X0, TP_X, TP_Y0, RIB_X, ESP_X, ESP_Y0, ESP_POCKET
     global USB_RELIEF_Y, ESP_USB_RECESS
     global TACT_XY, OLED_X, OLED_Y, WIN_XY, CAP_FLANGE_T, CAP_STEM_H
+    global SNAP_P, SNAP_Z, SNAP_SITES
     # lower cavity: battery beside the TP4056 (rib + two gaps = 3 mm), or the
     # frame opening plus a ledge on each side, whichever is wider
     CAV_W = max(BAT_W + TP_W + 3.0, PCB_W + 2 * (PCB_CLEAR + LEDGE_MIN))
@@ -203,6 +216,16 @@ def derive():
     # stem ends 1 mm proud of the lid
     CAP_FLANGE_T = LID_CLEAR - TACT_H - 0.3
     CAP_STEM_H = (LID_CLEAR - TACT_H) + LID_T + 1.0
+    # snap detents: a crest CLEAR_FRICTION + SNAP_BITE off the skirt face bites
+    # SNAP_BITE past the frame; bump roots (seated lid) from SNAP_Z0 above the
+    # skirt bottom (= PCB_TOP) over two 45 deg ramps plus the crest. Sites as
+    # (outward normal, XY on the frame's inner face): mid X-, X+ and Y+ walls,
+    # and the Y- skirt remnant right of the ESP32 notch, at its midpoint
+    SNAP_P = CLEAR_FRICTION + SNAP_BITE
+    SNAP_Z = (PCB_TOP + SNAP_Z0, PCB_TOP + SNAP_Z0 + 2 * SNAP_P + SNAP_CREST)
+    SNAP_SITES = (((-1.0, 0.0), (-OPEN_W / 2, 0.0)), ((1.0, 0.0), (OPEN_W / 2, 0.0)),
+                  ((0.0, 1.0), (0.0, OPEN_L / 2)),
+                  ((0.0, -1.0), ((ESP_X + SKIRT_NOTCH_W / 2 + OPEN_W / 2) / 2, -OPEN_L / 2)))
 
 
 def hole(col, row):
@@ -245,6 +268,45 @@ def union(*parts):
 
 def rounded_rect(w, l, r):
     return shp_box(-w / 2 + r, -l / 2 + r, w / 2 - r, l / 2 - r).buffer(r, quad_segs=QS)
+
+
+def wall_frame(n, xy):
+    """4x4 that stands a mesh built in (u = out of the wall, v = up, s = along
+    the wall) against a wall: u along the outward XY normal n, v along world Z,
+    origin at xy on Z = 0. s = n x Z keeps it right-handed (no mirrored faces)."""
+    m = np.eye(4)
+    m[:3, 0] = (*n, 0.0)
+    m[:3, 1] = (0.0, 0.0, 1.0)
+    m[:3, 2] = np.cross((*n, 0.0), (0.0, 0.0, 1.0))
+    m[:3, 3] = (*xy, 0.0)
+    return m
+
+
+def snap_bump(n, xy):
+    """One detent bump on the skirt's outer face at site (n, xy): the (u, z)
+    profile — 45 deg lead-in out to SNAP_P, flat crest, 45 deg back to the
+    face — extruded SNAP_LEN along the wall, sunk 0.5 into the skirt so the
+    union has no coplanar seam. Square ends."""
+    z0, z1 = SNAP_Z
+    profile = Polygon([(-0.5, z0), (0.0, z0), (SNAP_P, z0 + SNAP_P), (SNAP_P, z1 - SNAP_P),
+                       (0.0, z1), (-0.5, z1)])
+    m = trimesh.creation.extrude_polygon(profile, SNAP_LEN)
+    m.apply_translation([0.0, 0.0, -SNAP_LEN / 2])
+    m.apply_transform(wall_frame(n, (xy[0] - n[0] * CLEAR_FRICTION, xy[1] - n[1] * CLEAR_FRICTION)))
+    return m
+
+
+def snap_groove(n, xy):
+    """The bump's groove in the frame's inner face: a plain channel SNAP_BITE +
+    SNAP_GROOVE_CLEAR deep, 1 mm longer and 0.2 taller each way than the bump,
+    closed above (a slot up to the frame top would retain nothing). Built in
+    the wall frame (u, z, s) and reaching 1 mm into the opening: no coplanar
+    face with the opening cutter."""
+    z0, z1 = SNAP_Z
+    m = bbox(-1.0, z0 - 0.2, -(SNAP_LEN + 1.0) / 2,
+             SNAP_BITE + SNAP_GROOVE_CLEAR, z1 + 0.2, (SNAP_LEN + 1.0) / 2)
+    m.apply_transform(wall_frame(n, xy))
+    return m
 
 
 def print_orientation_lid(lid):
@@ -290,6 +352,8 @@ def build_base():
         # pry notch in the Y+ wall top edge, centred
         bbox(-PRY_W / 2, OPEN_L / 2 - 1.0, Z_TOP - PRY_H, PRY_W / 2, OUT_L / 2 + 1.0, Z_TOP + 1.0),
     ]
+    if SNAP_BITE > 0:  # lid detent grooves in the frame's inner face
+        cutters += [snap_groove(n, xy) for n, xy in SNAP_SITES]
     shell = diff(solid, *cutters)
     # ribs are sunk 0.5 mm into floor/wall so the union has no coplanar seams
     tp_y1 = TP_Y0 + TP_L
@@ -313,6 +377,7 @@ def build_lid():
         shp_box(-SKIRT_W / 2 + SKIRT_T, -SKIRT_L / 2 + SKIRT_T,
                 SKIRT_W / 2 - SKIRT_T, SKIRT_L / 2 - SKIRT_T))
     skirt = prism(ring, Z_TOP - LID_CLEAR, Z_TOP + 0.5)  # bottom lands on the perfboard
+    bumps = [snap_bump(n, xy) for n, xy in SNAP_SITES] if SNAP_BITE > 0 else []
     cutters = [
         bbox(WIN_XY[0] - WIN_W / 2, WIN_XY[1] - WIN_L / 2, Z_TOP - 1.0,
              WIN_XY[0] + WIN_W / 2, WIN_XY[1] + WIN_L / 2, Z_TOP + LID_T + 1.0),
@@ -328,7 +393,7 @@ def build_lid():
     if geom is not None:
         top = Z_TOP + LID_T
         cutters += [prism(q, top - ENGRAVE_DEPTH, top + 1.0) for q in getattr(geom, "geoms", [geom])]
-    return diff(union(plate, skirt), *cutters)
+    return diff(union(plate, skirt, *bumps), *cutters)
 
 
 def engraving_geometry():
@@ -423,11 +488,14 @@ def component_boxes():
 def apply_printer_args(argv=None):
     """Override the printer/kit-fit parameters from the command line, so parts
     can be tuned without editing code (`... generate.py --clear-friction 0.32`)."""
-    global CLEAR_FRICTION, TACT_H, BAT_W, BAT_L, BAT_T, ENGRAVE_TEXT
+    global CLEAR_FRICTION, SNAP_BITE, TACT_H, BAT_W, BAT_L, BAT_T, ENGRAVE_TEXT
     p = argparse.ArgumentParser(description="Generate the tally case STLs.")
     p.add_argument("--clear-friction", type=float, default=CLEAR_FRICTION,
                    metavar="MM", help="lid skirt clearance to the frame per side "
                    f"(default {CLEAR_FRICTION}; tune in ±0.04 steps)")
+    p.add_argument("--snap-bite", type=float, default=SNAP_BITE, metavar="MM",
+                   help="lid detent bite past the frame's inner face (default "
+                   f"{SNAP_BITE}; PLA ~0.3; 0 = no detents, plain friction fit)")
     p.add_argument("--tact-height", type=float, default=TACT_H, metavar="MM",
                    help="6x6 tact switch height, PCB top to plunger top "
                    f"(default {TACT_H}; kits ship 4.3/5/6/7)")
@@ -463,13 +531,27 @@ def apply_printer_args(argv=None):
     if PCB_Z < bat[2] + 2.0:
         p.error(f"battery {bat[2]} mm thick needs PCB_Z >= {bat[2] + 2.0} "
                 f"(2 mm solder-side clearance; PCB_Z is {PCB_Z})")
-    CLEAR_FRICTION, TACT_H = a.clear_friction, a.tact_height
+    if a.snap_bite < 0:
+        p.error("--snap-bite wants >= 0 (0 = no detents)")
+    CLEAR_FRICTION, SNAP_BITE, TACT_H = a.clear_friction, a.snap_bite, a.tact_height
     BAT_W, BAT_L, BAT_T = bat
     derive()
+    if SNAP_BITE > 0:  # the grooves must leave wall, the Y- bump must miss the skirt notch
+        wall = min(OUT_W - OPEN_W, OUT_L - OPEN_L) / 2 - (SNAP_BITE + SNAP_GROOVE_CLEAR)
+        if wall < SNAP_MIN_WALL:
+            p.error(f"--snap-bite {SNAP_BITE} leaves {wall:.2f} mm of frame wall behind "
+                    f"the grooves (SNAP_MIN_WALL {SNAP_MIN_WALL})")
+        x = SNAP_SITES[-1][1][0]  # the Y- bump, between the skirt notch and the corner
+        if (x - SNAP_LEN / 2 < ESP_X + SKIRT_NOTCH_W / 2 + 1.0
+                or x + SNAP_LEN / 2 > SKIRT_W / 2 - 1.0):
+            p.error(f"the Y- snap bump ({x - SNAP_LEN / 2:.1f}..{x + SNAP_LEN / 2:.1f}) "
+                    "comes within 1 mm of the skirt notch or corner: shorten SNAP_LEN")
 
 
 def tolerance_summary():
-    return (f"lid skirt clearance {CLEAR_FRICTION:.2f} mm/side; tact height "
+    snap = (f"snap bite {SNAP_BITE:g} ({len(SNAP_SITES)} detents)" if SNAP_BITE > 0
+            else "no snap (friction only)")
+    return (f"lid skirt clearance {CLEAR_FRICTION:.2f} mm/side; {snap}; tact height "
             f"{TACT_H:.1f} (cap flange {CAP_FLANGE_T:.1f}, stem {CAP_STEM_H:.1f}); "
             f"battery {BAT_W:g} x {BAT_L:g} x {BAT_T:g}")
 
@@ -642,7 +724,7 @@ def build_index():
          alt="Renders of the tally counter case, closed and exploded"></a>
     <h2>Case</h2>
     <p class="geo">{OUT_W:.1f} × {OUT_L:.1f} × {Z_TOP + LID_T:.1f} mm closed ·
-       friction-fit lid · 4 parts, no supports</p>
+       {'snap-fit' if SNAP_BITE > 0 else 'friction-fit'} lid · 4 parts, no supports</p>
     <p><a class="btn" href="case/preview.html">Interactive 3D preview</a></p>
     <details open><summary>STL downloads</summary><ul>{stls}</ul></details>
   </article>

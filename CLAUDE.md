@@ -30,8 +30,8 @@ case/generate.py               constants with why-comments + derive() + build(pa
 case/Dockerfile                python:3.14-slim + fonts-liberation (engraving font) + requirements.txt
 case/preview_template.html     template for the self-contained three.js preview (filtarr's)
 case/tools/render_docs.py      README images (matplotlib software renders), same flags
-case/tools/verify.py           68 checks on in-memory builds (64 with --omit-engraving), exit 1
-                               on failure, same flags
+case/tools/verify.py           105 checks on in-memory builds (70 with --snap-bite 0, 101 with
+                               --omit-engraving), exit 1 on failure, same flags
 case/tools/fetch_three.py      stdlib-only three.js downloader (`make vendor`, bare python image)
 case/vendor/                   three.module.min.js + three.core.min.js + THREE_VERSION (committed)
 case/stl/, case/docs/          COMMITTED outputs — regenerate, never edit
@@ -55,11 +55,13 @@ make esphome-config  # validate only
 make esphome-ota     # DEVICE ?= tally.local — turn on "Keep Awake" in HA first
 make clean           # case/stl case/docs case/preview.html index.html .pio build .esphome (volumes stay)
 make case GEN_ARGS="--clear-friction 0.32 --tact-height 4.3 --battery 30x40x5"
+make case GEN_ARGS="--snap-bite 0.3"   # PLA lid; 0 = no detents (plain friction fit)
 make case ENGRAVING="My Text"   # appends --engraving "My Text" to GEN_ARGS
 make case OMIT_ENGRAVING=1      # appends --omit-engraving (plain lid top)
 ```
 
-Expected results: verify `68 checks — ALL PASS` (64 with `--omit-engraving`);
+Expected results: verify `105 checks — ALL PASS` (70 with `--snap-bite 0`, 101 with
+`--omit-engraving`);
 plain RAM 4.6 % / Flash 25.2 %;
 ESPHome Flash 51 % / RAM 33 %, factory bin 983 KB.
 
@@ -83,8 +85,13 @@ ESPHome Flash 51 % / RAM 33 %, factory bin 983 KB.
   lid engraving, Liberation Sans Bold via matplotlib's `TextPath` (filtarr's
   mechanism), the font from the image's `fonts-liberation` — the one apt package
   left unpinned, so a font change re-triangulates only `tally-lid.stl`.
-- **Friction lid** (no screws, no magnets): the skirt slides *inside* the frame and
-  clamps the perfboard on the ledge. 0.28 mm/side is filtarr's calibrated value.
+- **Snap-fit lid** (no screws, no magnets, no hardware): the skirt slides *inside*
+  the frame (0.28 mm/side, filtarr's calibrated value) and clamps the perfboard on
+  the ledge; four 8 mm detents on the skirt's outer face click into closed grooves
+  in the frame, so a handheld counter picked up by the lid or turned over keeps
+  it on. Snaps over magnets/screws: nothing to buy, glue or thread into a 2 mm
+  wall, and with 45° ramps both ways the lid still releases at the existing pry
+  notch. `--snap-bite 0` is the pre-snap friction-only lid, byte-identical STLs.
 - **Perfboard-driven geometry**: the board is a specific part used whole (Özdisan
   5 × 5, `PCB_URL`, 50 × 50, 18 × 19 holes centred — no cutting), every placement
   is `hole(col, row)`, and cavity, ledge, window and cap holes derive from
@@ -137,7 +144,11 @@ TP 17 + rib/gaps 3; length from PCB + 2 × (0.3 + 1.5) ledge); frame opening OPE
 PCB_TOP 12.6, Z_TOP 20.1 (+ LID_CLEAR 7.5), closed 22.1; lid 9.5 tall = LID_T 2 +
 7.5 skirt; SKIRT 50.04 × 50.04 (opening − 2 × 0.28), SKIRT_NOTCH_W 19.0 over the
 ESP32 end; USB_RELIEF_Y −26.92 (= −OPEN_L/2 − ESP_POCKET − USB_WALL_T),
-ESP_USB_RECESS 0.20.
+ESP_USB_RECESS 0.20; SNAP_P 0.68 (= CLEAR_FRICTION + SNAP_BITE 0.4), SNAP_Z
+13.10..15.26 (PCB_TOP + SNAP_Z0 0.5, + 2 × SNAP_P + SNAP_CREST 0.8), SNAP_SITES
+as (outward normal, XY on the frame's inner face): X− (−25.3, 0), X+ (25.3, 0),
+Y+ (0, 25.3), Y− (14.225, −25.3) = midpoint of the skirt remnant right of the
+notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
 
 - **Under the ledge** (lower cavity): battery bay at X− (BAT_X0 −26.5, 34 wide,
   0.5 air); TP4056 against the X+ wall (TP_X0 10, TP_X 18.5), USB end sunk 1 mm
@@ -154,20 +165,37 @@ ESP_USB_RECESS 0.20.
   face. Tacts at TACT_XY (±12.7, 5.08) = `hole(3.5|13.5, 11)` (row 12 would hit
   the OLED). OLED header in col 1 rows 14…17 → OLED_X −2.05, OLED_Y 16.51; window
   WIN 27 × 9 at WIN_XY (1.65, 16.51) = OLED centre + OLED_AA_DX 3.7.
-- **Lid**: plate 2.0, skirt 1.2 inside the frame, cap holes Ø8.4 at TACT_XY, pry
-  notch 10 × 1.5 in the Y+ wall top edge, plate notch over the USB relief.
+- **Lid**: plate 2.0, skirt 1.2 inside the frame (snap bumps on its outer face,
+  next bullet), cap holes Ø8.4 at TACT_XY, pry notch 10 × 1.5 in the Y+ wall top
+  edge, plate notch over the USB relief.
   Engraving: ENGRAVE_TEXT "Grindarr" (None = omitted) recessed ENGRAVE_DEPTH 0.6
   into the top face, ENGRAVE_H 6.0 cap height (auto-shrunk to the free band),
   centred ENGRAVE_XY (0, −13), ENGRAVE_FONT Liberation Sans Bold, reading along
   +X, upright toward Y+. Caps: stem Ø8.0, flange Ø11 × 2.2 (LID_CLEAR − TACT_H −
   0.3), stem 5.5 (1 mm proud), Ø3.8 × 0.5 recess centres on the plunger, 0.5 mm
   embossed symbol.
+- **Snap detents** (one per SNAP_SITES entry; `snap_bump()` unions onto the lid,
+  `snap_groove()` is a base cutter, both stood against the wall by
+  `wall_frame(n, xy)` — a 4×4 mapping (u = out of the wall, v = Z, s = along the
+  wall) onto a site; both skipped when SNAP_BITE is 0). Bump: (u, z) profile
+  45° lead-in out to SNAP_P, SNAP_CREST 0.8 flat, 45° release ramp back to the
+  face, extruded SNAP_LEN 8 along the wall, sunk 0.5 into the skirt (no coplanar
+  seam); the crest bites SNAP_BITE 0.4 past the frame's inner face; Z 13.10..15.26
+  with the lid seated. Groove: SNAP_BITE + SNAP_GROOVE_CLEAR 0.1 = 0.5 deep, 9
+  long, Z 12.90..15.46 (1 mm / 0.2 mm beyond the bump), closed above by a solid
+  band to Z_TOP; remaining frame wall 3.2 (X sides) / 3.0 (Y sides), the Y−
+  groove starts 6.6 from the USB relief. Volumes: lid 7.4 cm³ (+0.03), base
+  17.2 cm³ (−0.05); outer sizes unchanged.
 - `apply_printer_args` validates: `--tact-height` + 1.5 ≤ LID_CLEAR (→ ≤ 6.0),
-  battery T + 2 ≤ PCB_Z (→ ≤ 7), `--engraving` non-empty with an outline for every
-  glyph (else `p.error`; `--omit-engraving` sets ENGRAVE_TEXT None), then re-runs
-  `derive()`. `verify.py` and `render_docs.py` import `generate` and call the same
-  function, so the three always agree on GEN_ARGS. The summary line prints
-  `Engraving: "Grindarr" (6 mm, 0.6 deep)` or `omitted`.
+  battery T + 2 ≤ PCB_Z (→ ≤ 7), `--snap-bite` ≥ 0 with ≥ SNAP_MIN_WALL 1.0 of
+  frame wall left behind the grooves and the Y− bump ≥ 1 mm from the skirt notch
+  and the corner, `--engraving` non-empty with an outline for every glyph (else
+  `p.error`; `--omit-engraving` sets ENGRAVE_TEXT None), then re-runs `derive()`.
+  `verify.py` and `render_docs.py` import `generate` and call the same function,
+  so the three always agree on GEN_ARGS. The summary line prints
+  `snap bite 0.4 (4 detents)` or `no snap (friction only)` and
+  `Engraving: "Grindarr" (6 mm, 0.6 deep)` or `omitted`; `build_index()` writes
+  "snap-fit lid" / "friction-fit lid" accordingly.
 
 ## Conventions & gotchas
 
@@ -192,6 +220,16 @@ ESP_USB_RECESS 0.20.
   r155+ physical scale. Since three.js r186 the npm package ships no `.min.js`,
   so `fetch_three.py` pulls from jsdelivr (serves the shipped min when it
   exists, Terser-minifies on the fly otherwise).
+- **Snap detents**: both ramps are 45° **on purpose** (symmetric) — a steeper
+  release ramp would hold harder but defeat the pry notch and need support on the
+  flipped lid. The groove top stays **closed** (solid band to Z_TOP; a slot open to
+  the rim retains nothing). The Y− site is **derived** from the skirt notch
+  (`(ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2`), so moving the ESP32 moves it and
+  `apply_printer_args` re-checks its 1 mm margins. `--snap-bite 0` must keep
+  producing **byte-identical** lid/base STLs to the pre-snap case: keep the
+  `if SNAP_BITE > 0` guards in `build_base()`/`build_lid()`; `verify.py`'s `snap`
+  scope rebuilds the no-snap twins in-process and diffs volumes against the
+  analytic bump/groove volumes.
 - The Makefile mounts the **repo root** at `/app` and runs in `/app/case`, so
   `generate.py` can write `../index.html`; `python3 generate.py` with only
   `case/` mounted would drop index.html into the container's `/`.
@@ -242,6 +280,7 @@ ESP_USB_RECESS 0.20.
   committing or pushing. Do not `git init`/commit unless asked.
 - Hardware status: **nothing flashed or printed yet** (see README → Not yet
   verified on hardware). First real-world feedback will decide
-  `--clear-friction`, `OLED_AA_DX`, the OLED header order, the 1.5 s wake guard,
+  `--clear-friction`, `--snap-bite` (click/pry-off force, skirt durability, the
+  PLA 0.3 guess), `OLED_AA_DX`, the OLED header order, the 1.5 s wake guard,
   whether the 1.4 mm USB wall prints and seats a plug, and whether the 6 mm
   engraving is legible.

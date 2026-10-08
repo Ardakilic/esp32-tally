@@ -12,6 +12,7 @@ Every fit override of generate.py is accepted, so a tuned build can be
 verified the same way it is generated:
   ... python3 tools/verify.py --clear-friction 0.32 --tact-height 4.3
   ... python3 tools/verify.py --omit-engraving
+  ... python3 tools/verify.py --snap-bite 0      (plain friction lid, no detents)
 
 Needs the ray-cast extras on top of requirements.txt — see requirements-dev.txt
 (the documented verify command installs them into a throwaway container).
@@ -70,6 +71,26 @@ def section(mesh, z):
         planar, _ = sec.to_planar(to_2D=np.eye(4))
     geom = unary_union(list(planar.polygons_full))
     return [p for p in getattr(geom, "geoms", [geom]) if p.geom_type == "Polygon"]
+
+
+def cut(mesh, origin, normal):
+    """3D vertices of the mesh's outline in an arbitrary plane."""
+    sec = mesh.section(plane_origin=origin, plane_normal=normal)
+    return sec.vertices if sec is not None else np.zeros((0, 3))
+
+
+def wall_strip(c, n, u0, u1, a):
+    """Axis-aligned XY box beside a wall: u0..u1 out from point c along the
+    (axis-aligned) outward normal n, +-a along the wall."""
+    xs, ys = zip(*[(c[0] + n[0] * u + abs(n[1]) * s, c[1] + n[1] * u + abs(n[0]) * s)
+                   for u in (u0, u1) for s in (-a, a)])
+    return shp_box(min(xs), min(ys), max(xs), max(ys))
+
+
+def reach(geom, n):
+    """How far a shapely geometry extends along the axis-aligned direction n."""
+    x0, y0, x1, y1 = geom.bounds
+    return max(n[0] * x0 + n[1] * y0, n[0] * x1 + n[1] * y1)
 
 
 def hits(mesh, origin, direction):
@@ -240,6 +261,76 @@ def verify():
     rep.check("plus cap has more material than minus (two bars vs one)",
               parts["cap-plus"].volume > parts["cap-minus"].volume + 1.0,
               f"{parts['cap-plus'].volume:.1f} vs {parts['cap-minus'].volume:.1f} mm3")
+
+    rep.scope = "snap"
+    # against the no-snap twins built in-process: the detents must add exactly
+    # the four bump prisms to the lid and take exactly the four grooves out of
+    # the base, nothing else — and with --snap-bite 0 both parts must be
+    # identical to the plain build (to 1e-3 mm3 = 1e-6 cm3)
+    bite = g.SNAP_BITE
+    g.SNAP_BITE = 0.0
+    g.derive()
+    plain_lid, plain_base = g.build_lid(), g.build_base()
+    g.SNAP_BITE = bite
+    g.derive()
+    sites = g.SNAP_SITES if bite > 0 else ()
+    depth_want = bite + g.SNAP_GROOVE_CLEAR
+    bump_v = (g.SNAP_P + g.SNAP_CREST) * g.SNAP_P * g.SNAP_LEN  # trapezoid profile x length
+    groove_v = depth_want * (g.SNAP_LEN + 1.0) * (g.SNAP_Z[1] - g.SNAP_Z[0] + 0.4)
+    for what, dv, want in (("lid - no-snap lid = the bumps", lid.volume - plain_lid.volume, len(sites) * bump_v),
+                           ("no-snap base - base = the grooves", plain_base.volume - base.volume,
+                            len(sites) * groove_v)):
+        rep.check(what if sites else what.split(" = ")[0] + " = 0 (identical)",
+                  abs(dv - want) <= max(0.01 * want, 1e-3), f"{dv:.3f} mm3 (want {want:.3f})")
+    # per site: a horizontal section through the crest gives the bump (what the
+    # lid has beyond its skirt face) and the groove (what the frame lacks behind
+    # its inner face); a vertical section across the wall gives their Z ranges
+    z_mid = sum(g.SNAP_Z) / 2
+    lid_cut = unary_union(section(lid, z_mid)) if sites else None
+    base_cut = unary_union(section(base, z_mid)) if sites else None
+    for n, c in sites:
+        side = "XY"[n[0] == 0] + "-+"[n[0] + n[1] > 0]
+        n3, c3 = np.array([*n, 0.0]), np.array([*c, 0.0])
+        face = n3 @ c3  # the frame's inner face, measured along n
+        along = 1 if n[0] else 0  # the axis running along this wall
+        bump = lid_cut.intersection(wall_strip(c, n, -g.CLEAR_FRICTION + 0.02, g.SNAP_P + 1.0, g.SNAP_LEN))
+        groove = wall_strip(c, n, 0.02, depth_want + 1.0, g.SNAP_LEN).difference(base_cut)
+        behind = base_cut.intersection(wall_strip(c, n, depth_want + 0.02, 20.0, g.SNAP_LEN))
+        depth = reach(groove, n) - face
+        rep.near(f"{side} bump crest = CLEAR_FRICTION + SNAP_BITE", reach(bump, n) - (face - g.CLEAR_FRICTION),
+                 g.SNAP_P, tol=0.02)
+        rep.near(f"{side} groove depth = SNAP_BITE + SNAP_GROOVE_CLEAR", depth, depth_want, tol=0.02)
+        rep.at_least(f"{side} wall behind the groove >= SNAP_MIN_WALL", reach(behind, n) - face - depth,
+                     g.SNAP_MIN_WALL)
+        b_lo, b_hi = bump.bounds[along], bump.bounds[along + 2]
+        g_lo, g_hi = groove.bounds[along], groove.bounds[along + 2]
+        rep.at_least(f"{side} seated: bump inside the groove along the wall by >= 0.5",
+                     min(b_lo - g_lo, g_hi - b_hi), 0.5)
+        # vertical section (plane normal = along the wall) through the centre.
+        # Points off the skirt face lie on the bump's 45 deg ramps or crest, so
+        # z - u / z + u are its lower / upper roots on the face (exact at the
+        # crest corners); points on the face itself are triangulation noise
+        pts = cut(lid, c3, np.cross(n3, [0.0, 0.0, 1.0]))
+        u, z = pts @ n3 - (face - g.CLEAR_FRICTION), pts[:, 2]
+        sel = (u > 1e-3) & (u < g.SNAP_P + 1.0) & (z > g.PCB_TOP + 0.01) & (z < g.Z_TOP - 0.01)
+        bz = ((z - u)[sel].min(), (z + u)[sel].max()) if sel.any() else (0.0, 0.0)
+        pts = cut(base, c3, np.cross(n3, [0.0, 0.0, 1.0]))
+        u, z = pts @ n3 - face, pts[:, 2]
+        wall = (u > -1e-3) & (u < depth_want + 1.0) & (z > g.Z_LEDGE + 0.01)
+        sel = wall & (u > 1e-3) & (z < g.Z_TOP - 0.01)  # the groove's bottom face
+        gz = (z[sel].min(), z[sel].max()) if sel.any() else (0.0, 0.0)
+        top = z[wall].max() if wall.any() else 0.0  # Z_TOP, or the pry notch floor
+        rep.at_least(f"{side} groove closed: solid above it >= 1.5", top - gz[1], 1.5)
+        rep.at_least(f"{side} groove top >= 3 below Z_TOP", g.Z_TOP - gz[1], 3.0)
+        rep.check(f"{side} groove bottom above the PCB top", gz[0] > g.PCB_TOP + TOL,
+                  f"Z {gz[0]:.2f} vs PCB top {g.PCB_TOP:.2f}")
+        rep.at_least(f"{side} seated: bump Z {bz[0]:.2f}..{bz[1]:.2f} inside groove Z "
+                     f"{gz[0]:.2f}..{gz[1]:.2f} by >= 0.15", min(bz[0] - gz[0], gz[1] - bz[1]), 0.15)
+        if n[1] < 0:  # the Y- wall carries the ESP32 USB-C relief and the skirt notch
+            notch = g.ESP_X + g.SKIRT_NOTCH_W / 2
+            rep.at_least("Y- groove clear of the USB relief by >= 1", g_lo - notch, 1.0)
+            rep.at_least("Y- bump clear of the skirt notch by >= 1", b_lo - notch, 1.0)
+            rep.at_least("Y- bump clear of the skirt corner by >= 1", g.SKIRT_W / 2 - b_hi, 1.0)
     return rep.rows
 
 
