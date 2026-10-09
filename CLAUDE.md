@@ -111,6 +111,10 @@ ESPHome Flash 51 % / RAM 33 %, factory bin 983 KB.
 
 - **Pins**: BTN_UP GPIO3, BTN_DOWN GPIO4 (to GND, internal pull-ups, active low);
   OLED SDA GPIO6, SCL GPIO7, address 0x3C, 128 × 32. BOOT button = GPIO9.
+  Header columns in the layout (USB at Y−, viewed from above, rows 0→7 from the
+  USB end): col 3 = 5V, GND, 3V3, GPIO4, GPIO3, GPIO2, GPIO1, GPIO0; col 9 =
+  GPIO5, GPIO6, GPIO7, GPIO8, GPIO9, GPIO10, GPIO20, GPIO21 — mischianti photo
+  pinout, confirmed on the assembled board 2026-10-10.
 - **Super Mini power** (mischianti schematic, 2025-07): `5V` header pin = USB VBUS
   net before BAT60J diode → ME6211 3.3 V LDO. Battery path Vbat → BAT60J
   (≈0.2–0.3 V) → ME6211 → 3V3: regulation to ≈3.6–3.7 V, 3V3 sags below ≈3.4 V
@@ -204,6 +208,9 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   (`/cache`) hold the toolchains; `make clean` keeps them.
 - **Context7** for library docs (ESPHome components, U8g2, trimesh); don't guess
   YAML keys.
+- Super Mini pinout images disagree on mirroring; the photo-based mischianti
+  pinout and the real board are the reference, see `render_docs.py`
+  `ESP_LEFT`/`ESP_RIGHT`.
 - Outputs are committed (`case/stl`, `case/docs`, `case/preview.html`,
   `index.html`, `case/vendor/`) and never hand-edited; firmware binaries are
   gitignored and rebuilt. Bumping any pin re-triangulates every STL: regenerate,

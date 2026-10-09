@@ -79,15 +79,23 @@ components sit on the bare face, pads underneath. The drawing above is the
 **component-side view**, so hole positions appear mirrored once you flip the board
 to solder. Column 0 / row 0 is the bottom-left corner when the display end is up.
 The Super Mini's two pin rows go into **columns 3 and 9, rows 0…7**, USB-C at the
-bottom edge; because row 0 sits only 2.14 mm from the board edge the receptacle
+bottom edge — column 3 carries 5V, GND, 3V3, GPIO4, GPIO3, GPIO2, GPIO1, GPIO0
+from the USB end up and column 9 carries GPIO5, GPIO6, GPIO7, GPIO8, GPIO9,
+GPIO10, GPIO20, GPIO21 (verified against the mischianti photo pinout and on a
+real board, 2026-10-10); because row 0 sits only 2.14 mm from the board edge the receptacle
 face ends up just 1.72 mm past the perfboard, so the case wall is relieved from
 the outside to a 1.4 mm thin wall there and the port sits 0.2 mm behind it.
 The two tact switches are centred at **X ±12.7 mm on row 11** — their four legs land
 in columns 2 & 5 (DOWN) and 12 & 15 (UP), rows 10 & 12. The OLED's 4-pin header
 goes into **column 1, rows 14…17**, with the module extending to the right across
-the top of the board. Pin names in the drawing follow the common Super Mini
-silkscreen — **verify against your board** before soldering; OLED header order
-varies (GND VCC SCL SDA on most modules).
+the top of the board. Pin names in the drawing match the real board — still
+**verify against your board** before soldering, Super Mini pinout images disagree
+on mirroring; OLED header order varies (GND VCC SCL SDA on most modules).
+
+> **Rework note.** If you built the board from a drawing dated before 2026-10-10,
+> the two ESP32 columns were mirrored: move every wire that lands on the module
+> to the other column at the same row (5V, GND, 3V3, SDA, SCL, UP, DOWN) — the
+> firmware is unchanged.
 
 ### Power notes
 

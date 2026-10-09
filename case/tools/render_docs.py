@@ -103,9 +103,11 @@ def render_case(out_path):
 
 
 # ESP32-C3 Super Mini pin names with the USB at Y-, board viewed from above.
-# Left = col 3, right = col 9, rows 0..7 (0 = USB end). Verify on the silkscreen.
-ESP_LEFT = ["GPIO5", "GPIO6", "GPIO7", "GPIO8", "GPIO9", "GPIO10", "GPIO20", "GPIO21"]
-ESP_RIGHT = ["5V", "GND", "3V3", "GPIO4", "GPIO3", "GPIO2", "GPIO1", "GPIO0"]
+# Left = col 3, right = col 9, rows 0..7 (0 = USB end). Verified against the
+# mischianti photo pinout and on a real board 2026-10-10 (an earlier version had
+# the two columns mirrored). Still worth a glance at the silkscreen.
+ESP_LEFT = ["5V", "GND", "3V3", "GPIO4", "GPIO3", "GPIO2", "GPIO1", "GPIO0"]
+ESP_RIGHT = ["GPIO5", "GPIO6", "GPIO7", "GPIO8", "GPIO9", "GPIO10", "GPIO20", "GPIO21"]
 OLED_PINS = ["GND", "VCC", "SCL", "SDA"]  # rows 14..17, the usual order — check
 OLED_ROWS = range(14, 18)
 TACT_ROWS = (10, 12)  # tact pins straddle the body on row 11
