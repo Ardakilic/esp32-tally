@@ -40,12 +40,16 @@ ota:
     encryption:  # reuses the api key
 
 preferences:
-  flash_write_interval: 10s
+  # 1ms (= what 0s is coerced to, minus the validator warning): a queued save hits NVS on the next loop.
+  # NVS is log-structured, a 4-byte entry per click into the 20 KB partition is tens of millions of clicks
+  # before wear matters, and a power cut never loses one.
+  flash_write_interval: 1ms
 
 globals:
   - id: count
     type: int
     restore_value: true
+    update_interval: 1ms  # restoring globals poll for changes (default 1s); now every loop, then the preferences syncer writes
     initial_value: "0"
   - id: combo  # true while a both-buttons reset is in progress; suppresses the ±1 on release
     type: bool

@@ -19,7 +19,7 @@ enabled once by hand).
 Makefile                       canonical build: every target is a `docker run`
 firmware/plain/                PlatformIO + Arduino 3.3.12 (pioarduino 55.03.312-1), U8g2 2.36.18
   src/tally_logic.h            pure C++ state machine (debounce, clamp, both-held reset)
-  src/main.cpp                 pins, U8g2, Preferences/NVS (flush 2 s after change), deep sleep
+  src/main.cpp                 pins, U8g2, Preferences/NVS (written per click), deep sleep
   test/tally_logic_test.cpp    assert self-test, runs in gcc:14 — the committed test
   Dockerfile                   python:3.12-slim + platformio 6.2.0 + git, PLATFORMIO_CORE_DIR=/pio
   build/tally-plain.factory.bin  output (gitignored with .pio/)
@@ -266,7 +266,12 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   a both-held reset; it is cleared when the *other* button is already up.
 - `wifi`/`api` `reboot_timeout: 0s`: never reboot for lack of network.
 - Plain build: `Serial.setTxTimeoutMs(0)` — USB CDC with no host must not stall
-  the loop. NVS is written 2 s after the last change and on sleep, not per click.
+  the loop. NVS is written on every click (`putInt` commits itself; log-structured,
+  tens of millions of clicks before wear matters) — a power cut never loses one.
+- ESPHome: restoring `globals` only poll for changes every 1 s (`PollingComponent(1000)`)
+  → `update_interval: 1ms` on `count` **and** `preferences: flash_write_interval: 1ms`
+  (`0s` is coerced to 1 ms plus a validator warning; the syncer is itself a poller
+  since 2026.9); either alone leaves a window.
 - gfonts Roboto is downloaded at ESPHome compile time → the container needs
   internet on a cold cache.
 - **No USB passthrough in Docker Desktop on macOS**: flash via web.esphome.io in

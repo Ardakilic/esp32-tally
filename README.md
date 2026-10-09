@@ -22,8 +22,9 @@ as ghosts.*
 - **UP** (right, "+") and **DOWN** (left, "−") buttons, range 0…99999, DOWN stops
   at 0; a click counts on **release**, debounced 20 ms.
 - Hold **both ≥ 1 s → reset to 0**; the two releases that follow do not count.
-- Count **persisted in flash** (NVS on the plain build, ESPHome `globals` with
-  `restore_value` on the other); survives power-off and battery swaps.
+- Count **saved to flash on every click** (NVS on the plain build, ESPHome `globals`
+  with `restore_value` on the other): a power cut never loses a count. NVS is
+  log-structured, so that is tens of millions of clicks before wear matters.
 - **60 s idle → OLED off + deep sleep**; either button wakes it (that press is not
   counted). Slide switch = hard power off.
 - **Charging over USB-C** through a TP4056 module with cell protection; the ESP32's
@@ -136,7 +137,7 @@ are gitignored — `make` regenerates them from pinned Docker images.
 |---|---|
 | [`platformio.ini`](firmware/plain/platformio.ini) | platform / board / U8g2 pins |
 | [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine — pure C++, no Arduino |
-| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED, NVS (`Preferences`, flushed 2 s after the last change), deep sleep |
+| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED, NVS (`Preferences`, written on every click), deep sleep |
 | [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine, runs on the host in `gcc:14` |
 | [`Dockerfile`](firmware/plain/Dockerfile) | `python:3.12-slim` + platformio 6.2.0 + git, `PLATFORMIO_CORE_DIR=/pio` |
 

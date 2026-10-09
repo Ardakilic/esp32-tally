@@ -5,13 +5,11 @@
 #include "tally_logic.h"
 
 constexpr int BTN_UP = 3, BTN_DOWN = 4;
-constexpr uint32_t IDLE_SLEEP_MS = 60000, NVS_FLUSH_MS = 2000;
+constexpr uint32_t IDLE_SLEEP_MS = 60000;
 
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE, /*clock=*/7, /*data=*/6);
 Preferences prefs;
 Tally tally;
-bool dirty = false;
-uint32_t dirty_since = 0;
 
 static void draw() {
   char buf[8];
@@ -21,14 +19,7 @@ static void draw() {
   u8g2.sendBuffer();
 }
 
-static void flush() {
-  if (!dirty) return;
-  prefs.putInt("count", tally.count);
-  dirty = false;
-}
-
 static void sleepNow() {
-  flush();
   u8g2.setPowerSave(1);
   pinMode(BTN_UP, INPUT_PULLUP);
   pinMode(BTN_DOWN, INPUT_PULLUP);
@@ -56,11 +47,11 @@ void loop() {
   uint32_t now = millis();
   if (tally.update(!digitalRead(BTN_UP), !digitalRead(BTN_DOWN), now)) {
     draw();
-    dirty = true;
-    dirty_since = now;
+    // Write per click: NVS is log-structured, a 4-byte entry per click into the 20 KB default
+    // partition is tens of millions of clicks before wear matters, and a power cut never loses one.
+    prefs.putInt("count", tally.count);
     Serial.printf("count=%ld\n", (long)tally.count);
   }
-  if (dirty && now - dirty_since >= NVS_FLUSH_MS) flush();
   if (now - tally.last_activity_ms >= IDLE_SLEEP_MS) sleepNow();
   delay(5);
 }
