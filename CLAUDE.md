@@ -19,7 +19,8 @@ enabled once by hand).
 Makefile                       canonical build: every target is a `docker run`
 firmware/plain/                PlatformIO + Arduino 3.3.12 (pioarduino 55.03.312-1), U8g2 2.36.18
   src/tally_logic.h            pure C++ state machine (debounce, clamp, both-held reset)
-  src/main.cpp                 pins, U8g2, Preferences/NVS (written per click), deep sleep
+  src/main.cpp                 pins, U8g2, Preferences/NVS (written per click), deep sleep,
+                               seeded button state, GPIO8 boot blink, serial boot banner
   test/tally_logic_test.cpp    assert self-test, runs in gcc:14 — the committed test
   Dockerfile                   python:3.12-slim + platformio 6.2.0 + git, PLATFORMIO_CORE_DIR=/pio
   build/tally-plain.factory.bin  output (gitignored with .pio/)
@@ -261,13 +262,23 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
 - `deep_sleep.enter` **bypasses `deep_sleep.prevent`** — that's why "Keep Awake"
   is checked inside `idle_timer` rather than via prevent/allow.
 - The wake press is already ON at boot → its release is ignored by
-  `millis() > 1500` in both `on_release` lambdas (plain build: `setup()` waits
-  until both buttons are up instead). `combo` global swallows the releases after
-  a both-held reset; it is cleared when the *other* button is already up.
+  `millis() > 1500` in both `on_release` lambdas. Plain build: `setup()` seeds
+  `tally.up/down.raw/stable` from the pins and sets `tally.combo` if either is
+  held, so the wake press's release is swallowed and a stuck-LOW button cannot
+  block boot; `sleepNow()` leaves a LOW pin out of the GPIO wake mask (it would
+  re-wake instantly; IDF pulls up the wake pins itself,
+  `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`). ESPHome `combo` global
+  swallows the releases after a both-held reset; it is cleared when the *other*
+  button is already up.
 - `wifi`/`api` `reboot_timeout: 0s`: never reboot for lack of network.
 - Plain build: `Serial.setTxTimeoutMs(0)` — USB CDC with no host must not stall
-  the loop. NVS is written on every click (`putInt` commits itself; log-structured,
-  tens of millions of clicks before wear matters) — a power cut never loses one.
+  the loop. Boot prints `boot reset=<esp_reset_reason> wake=<wakeup cause>` and
+  the restored count. GPIO8 (`LED_PIN`, blue LED, active-LOW, 10 k pull-up,
+  strapping pin) is driven LOW for the length of `setup()` (≈0.3 s, mostly U8g2's
+  2 × 100 ms + 100 ms SSD1306 reset delays) then returned to INPUT — a blink with
+  a dark OLED means MCU alive, display dead. NVS is written on every click
+  (`putInt` commits itself; log-structured, tens of millions of clicks before
+  wear matters) — a power cut never loses one.
 - ESPHome: restoring `globals` only poll for changes every 1 s (`PollingComponent(1000)`)
   → `update_interval: 1ms` on `count` **and** `preferences: flash_write_interval: 1ms`
   (`0s` is coerced to 1 ms plus a validator warning; the syncer is itself a poller
@@ -279,6 +290,8 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   (GPIO9) while plugging in if the port is missing.
 - `make esphome` depends on `firmware/esphome/secrets.yaml` as a file target whose
   recipe prints the fix and exits 1.
+- Single-sided perfboard: the solder side faces the battery; insulation is part of
+  the build, not optional (README → Assembly steps 5–6).
 
 ## User context
 
@@ -290,9 +303,13 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
 - Working style: delegate research / edits / checks to subagents, Docker only,
   Context7 for docs, ask before open design choices, show results before
   committing or pushing. Do not `git init`/commit unless asked.
-- Hardware status: **nothing flashed or printed yet** (see README → Not yet
-  verified on hardware). First real-world feedback will decide
-  `--clear-friction`, `--snap-bite` (click/pry-off force, skirt durability, the
-  PLA 0.3 guess), `OLED_AA_DX`, the OLED header order, the 1.5 s wake guard,
-  whether the 1.4 mm USB wall prints and seats a plug, and whether the 6 mm
-  engraving is legible.
+- Hardware status: **printed, assembled on the Özdisan board, plain firmware
+  flashed via web.esphome.io (2026-10-10)**; wiring corrected after the
+  mirrored-pinout bug (d957647). Field incident: a hot-glued cell/TP4056 under
+  the board shorted/stressed the solder side and kept the OLED dark until the glue
+  came off → insulate the solder side and mount both to the floor with foam tape
+  (README → Assembly, Field notes). Open points: USB-C alignment (1.4 mm wall,
+  plug seating), snap feel (`--snap-bite`, `--clear-friction`, the PLA 0.3
+  guess), OLED window offset `OLED_AA_DX`, engraving legibility, the ESPHome
+  variant (untested on hardware, incl. the 1.5 s wake guard), and the 100 mAh cell
+  needs R_PROG ≥ 12 kΩ (default 1.2 kΩ = 1 A).

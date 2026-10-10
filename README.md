@@ -49,7 +49,8 @@ as ghosts.*
 | Male pin headers | 2 × 8 for the Super Mini |
 | Hook-up wire | thin silicone wire for the dozen connections below |
 | 4 printed parts | base, lid, cap "+", cap "−" ([Case](#case)) |
-| Hot glue | one dab to hold the slide switch |
+| Hot glue | one dab to hold the slide switch — never on the cell or the perfboard |
+| Kapton tape (or 0.3–0.5 mm PET / fish paper) + double-sided foam tape | insulate the perfboard's solder side; fix cell and TP4056 to the floor ([Assembly](#assembly)) |
 | Optional: 3 mm foam pad | under the OLED's free end so it can't rock on its header |
 
 ## Wiring
@@ -119,6 +120,9 @@ Verified from the Super Mini schematic (links in
   for cells ≥ 1000 mAh. For smaller cells swap R<sub>PROG</sub> (2 kΩ ≈ 580 mA).
 - **Charge with the switch OFF** so the TP4056's full-charge indication isn't
   confused by the load.
+- **Charging/USB test with the switch ON** back-feeds the cell through `OUT+` =
+  `B+` with no current control; macOS may disable the port ("USB Accessories
+  Disabled"). **Switch OFF first, always.**
 - `OUT−` is the protection-switched node (DW01 switches the low side): star the
   grounds at `OUT−`, never at `B−`.
 
@@ -137,7 +141,7 @@ are gitignored — `make` regenerates them from pinned Docker images.
 |---|---|
 | [`platformio.ini`](firmware/plain/platformio.ini) | platform / board / U8g2 pins |
 | [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine — pure C++, no Arduino |
-| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED, NVS (`Preferences`, written on every click), deep sleep |
+| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED, NVS (`Preferences`, written on every click), deep sleep, boot blink + serial banner |
 | [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine, runs on the host in `gcc:14` |
 | [`Dockerfile`](firmware/plain/Dockerfile) | `python:3.12-slim` + platformio 6.2.0 + git, `PLATFORMIO_CORE_DIR=/pio` |
 
@@ -150,6 +154,15 @@ Result: RAM 4.6 % (15.2 KB), Flash 25.2 % (330 KB), merged image 403 KiB. The
 `.factory.bin` is the complete flash image (bootloader @0x0, partitions @0x8000,
 boot_app0 @0xe000, app @0x10000) — flash it at offset 0. No OTA: reflashing means
 opening the lid.
+
+Liveness check: the Super Mini's **blue LED** (GPIO8) blinks ≈0.3 s on every boot
+and wake, so a blink with a dark OLED means the MCU runs and the display (or its
+wiring) is the problem. The USB serial port (115200) prints
+`boot reset=<esp_reset_reason> wake=<esp_sleep_wakeup_cause>` and the restored
+count at boot, then `count=N` per click. A button stuck low (solder bridge, jammed
+cap) cannot hold the chip awake: `setup()` seeds the button state instead of
+waiting for a release (so the wake press still doesn't count), and a pin that is
+low at sleep time is left out of the wake mask.
 
 ### ESPHome (Home Assistant)
 
@@ -249,16 +262,39 @@ at the display end.
 3. **Slide switch**: drop it between its two ribs from the inside, handle through
    the slot in the right wall; a dab of hot glue holds it.
 4. Solder and route the wires (table above); keep them below the ledge.
-5. **Perfboard** onto the ledge, pads down, ESP32 USB-C end towards the bottom
+5. **Insulate the solder side**: clip every pin tail under the perfboard to
+   ≤ 1 mm, then cover the **whole** solder side with Kapton/polyimide tape (two
+   layers over the header stubs) or a 0.3–0.5 mm PET / fish-paper sheet cut to
+   50 × 50. The ESP32 and OLED header stubs sit directly over the battery bay with
+   ≈2 mm of air; a LiPo pouch is 40 µm aluminium foil under 25 µm of nylon, so two
+   stubs pressed into it are shorted together (SDA and SCL are 2.54 mm apart), and
+   the TP4056's USB shell and `B−`/`OUT−` pads are ground.
+6. **Fix the cell and the TP4056 to the case floor** with double-sided foam tape —
+   never hot glue against the pouch or the perfboard underside. Hot glue
+   (175–200 °C) plus pressure on a pouch is a safety risk, and glue that shrinks or
+   is peeled off later cracks single-sided solder joints (the OLED's four first).
+7. **Perfboard** onto the ledge, pads down, ESP32 USB-C end towards the bottom
    edge, so the receptacle sits in its wall slot.
-6. **Caps** into the lid from below — "+" on the right, "−" on the left (as held,
+8. **Caps** into the lid from below — "+" on the right, "−" on the left (as held,
    display up).
-7. **Lid** on: the skirt notch goes over the ESP32 end; press down until it clicks
+9. **Lid** on: the skirt notch goes over the ESP32 end; press down until it clicks
    on all four sides.
 
 Open it by lifting with a coin in the pry notch at the display end — the detents'
 release ramps are 45°, so the lid pries off. Optionally stick a 3 mm foam pad under
 the OLED's free end before closing.
+
+### Field notes
+
+First build, 2026-10-10: with the TP4056 and cell hot-glued under the board the
+OLED stayed dark until the glue came off — contact through the header stubs and
+joint stress, not EMI; hence steps 5–6. Dark-display triage, in order: press
+**RST**; the serial port appears (`ls /dev/cu.usbmodem*`) and vanishes after 60 s
+(deep sleep); [web.esphome.io](https://web.esphome.io) → **Logs** shows `count=N`
+per click; the blue GPIO8 blink on boot = MCU alive; then meter the OLED header
+(VCC 3.3 V, SDA/SCL idle at 3.3 V) and reflow. A deep-sleeping ESP32-C3 does
+**not** wake when USB is plugged in — only a button or RST does — and with the
+slide switch ON a USB plug back-feeds the cell ([Power notes](#power-notes)).
 
 ### Fit tuning
 
@@ -400,13 +436,15 @@ Dimensions the case is built around (all in `generate.py` with their sources):
 
 ## Not yet verified on hardware
 
-Nothing in this repo has been flashed or printed yet. Everything above is from
-datasheets, the schematic, the geometry self-test and a host-side test of the
-state machine. Open points, in the order they'd bite:
+One unit has been printed, assembled on the Özdisan board and flashed with the
+plain firmware (2026-10-10, see [Field notes](#field-notes)); the ESPHome build
+has not run on hardware yet. The rest is from datasheets, the schematic, the
+geometry self-test and a host-side test of the state machine. Still open, in the
+order they'd bite:
 
 - **Deep-sleep wake on both buttons** (GPIO3 | GPIO4 mask via
   `esp_deep_sleep_enable_gpio_wakeup`) — compiles on both builds, untested on
-  silicon.
+  silicon; so is the plain build's GPIO8 blue boot blink.
 - The ESPHome **`millis() > 1500` wake-press guard** (the press that woke the chip
   is already ON at boot; its release must not count) — margin chosen by reasoning,
   not measured boot time.

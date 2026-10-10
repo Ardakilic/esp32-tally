@@ -57,6 +57,23 @@ int main() {
   hold(true, false, 50); hold(false, false, 50);
   assert(t.count == 1);
 
+  // seeded like setup(): the wake press is still held, its release must not count
+  t = Tally{};
+  t.up.raw = t.up.stable = true;
+  t.combo = true;
+  assert(!hold(false, false, 50));
+  hold(true, false, 50);
+  assert(hold(false, false, 50));
+  assert(t.count == 1);
+  // DOWN stuck low since boot: UP clicks (and a long UP hold) neither count nor reset
+  t = Tally{};
+  t.count = 5;
+  t.down.raw = t.down.stable = true;
+  t.combo = true;
+  for (int i = 0; i < 3; ++i) { hold(true, true, 50); assert(!hold(false, true, 50)); }
+  hold(true, true, 1100); hold(false, true, 50);
+  assert(t.count == 5);
+
   puts("OK");
   return 0;
 }
