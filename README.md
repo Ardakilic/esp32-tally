@@ -22,9 +22,20 @@ as ghosts.*
 - **UP** (right, "+") and **DOWN** (left, "−") buttons, range 0…99999, DOWN stops
   at 0; a click counts on **release**, debounced 20 ms.
 - Hold **both ≥ 1 s → reset to 0**; the two releases that follow do not count.
-- Count **saved to flash on every click** (NVS on the plain build, ESPHome `globals`
-  with `restore_value` on the other): a power cut never loses a count. NVS is
-  log-structured, so that is tens of millions of clicks before wear matters.
+- **Brew-method labels** beside the count (Comandante C40 MK4 grind chart): the count
+  keeps its big digits, and every method whose click range contains it is listed one
+  per line to its right, in table order (7 → "Turkish" over "Espresso"), up to four;
+  nothing when no range matches. The table is
+  [`firmware/common/grind_chart.h`](firmware/common/grind_chart.h), shared by both
+  firmwares; an empty table turns the labels off
+  ([Brew-method labels](#brew-method-labels-grind-chart)).
+- Count **saved to flash 2 s after the last click** (NVS on the plain build, ESPHome
+  `globals` with `restore_value` on the other, written on the next 2 s sync): a burst
+  of clicks becomes one write and deep sleep flushes first, but switching off within
+  2 s of a click can lose that click. NVS is log-structured, so even one write per
+  click would be tens of millions of clicks before wear matters. Configurable:
+  `SAVE_DELAY_MS` in `firmware/plain/platformio.ini` `build_flags`, the `save_delay`
+  substitution in `firmware/esphome/tally.yaml`.
 - **60 s idle → OLED off + deep sleep**; either button wakes it (that press is not
   counted). Slide switch = hard power off.
 - **Charging over USB-C** through a TP4056 module with cell protection; the ESP32's
@@ -139,10 +150,11 @@ are gitignored — `make` regenerates them from pinned Docker images.
 
 | File | Role |
 |---|---|
-| [`platformio.ini`](firmware/plain/platformio.ini) | platform / board / U8g2 pins |
+| [`platformio.ini`](firmware/plain/platformio.ini) | platform / board / U8g2 pins, `build_flags` (`SAVE_DELAY_MS`, `-I ../common`) |
 | [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine — pure C++, no Arduino |
-| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED, NVS (`Preferences`, written on every click), deep sleep, boot blink + serial banner |
-| [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine, runs on the host in `gcc:14` |
+| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED (big count with the matching brew methods stacked to its right, redrawn only on a click), NVS (`Preferences`, written 2 s after the last click), deep sleep, boot blink + serial banner |
+| [`../common/grind_chart.h`](firmware/common/grind_chart.h) | brew-method table `GRIND_CHART`, `GRIND_MAX_LINES` (4) and `grind_matches()`, shared with the ESPHome build |
+| [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine and the grind chart (table sanity, match oracle over counts 0…100, the line cap, one shipped-table spot check), runs on the host in `gcc:14` |
 | [`Dockerfile`](firmware/plain/Dockerfile) | `python:3.12-slim` + platformio 6.2.0 + git, `PLATFORMIO_CORE_DIR=/pio` |
 
 ```bash
@@ -150,7 +162,7 @@ make plain-test   # host self-test: prints OK
 make plain        # -> firmware/plain/build/tally-plain.factory.bin
 ```
 
-Result: RAM 4.6 % (15.2 KB), Flash 25.2 % (330 KB), merged image 403 KiB. The
+Result: RAM 4.6 % (15.2 KB), Flash 25.5 %, merged image 407 KiB. The
 `.factory.bin` is the complete flash image (bootloader @0x0, partitions @0x8000,
 boot_app0 @0xe000, app @0x10000) — flash it at offset 0. No OTA: reflashing means
 opening the lid.
@@ -180,15 +192,56 @@ settable), button **Reset Tally**, switch **Keep Awake**.
 
 ```bash
 make esphome-config   # validate tally.yaml
-make esphome          # -> firmware/esphome/.esphome/build/tally/build/firmware.factory.bin (983 KB)
+make esphome          # -> firmware/esphome/.esphome/build/tally/build/firmware.factory.bin (987 KB)
                       #    and firmware.ota.bin next to it
 make esphome-ota      # compile + OTA to DEVICE (default tally.local) after the first USB flash
 ```
 
-Result: Flash 51 %, RAM 33 %. The device **still sleeps after 60 s** with Wi-Fi: HA
+Result: Flash 51.5 %, RAM 33.1 %. The device **still sleeps after 60 s** with Wi-Fi: HA
 shows it unavailable in between, it reconnects on every wake and pushes the count.
 Before an OTA, press a button to wake it and turn on **Keep Awake** within 60 s;
 turning it off re-arms the idle timer.
+
+### Brew-method labels (grind chart)
+
+Both firmwares show, to the right of the count, the brew methods whose grind range
+contains it. The table is one header compiled by both,
+[`firmware/common/grind_chart.h`](firmware/common/grind_chart.h); the shipped rows
+are for a Comandante C40 MK4, clicks from zero, from
+[Honest Coffee Guide's table](https://honestcoffeeguide.com/comandante-c40-mk4-grind-settings/)
+(its chart runs French Press and Cold Brew past 40; the table caps them at the
+grinder's 1090 µm maximum):
+
+| Method | Clicks from zero |
+|---|---|
+| Turkish | 2–8 |
+| Espresso | 7–13 |
+| V60 | 15–25 |
+| Aeropress | 12–35 |
+| Pour Over | 16–34 |
+| French Press | 26–40 |
+| Cold Brew | 30–40 |
+
+The count keeps the same big digits whether or not a method shows. Matching methods
+are stacked one per line to its right, left-aligned, in table order (7 → Turkish,
+Espresso; 30 → Aeropress, Pour Over, French Press, Cold Brew), and digits plus names
+are centred together, so a count no range covers sits centred on its own. One to
+three names use the larger label font; a fourth match switches all four to a smaller
+one; a fifth and beyond is not shown. A name wider than the space left is cut at the
+right edge — with the shipped table the widest group (count 26, three names) ends at
+column 120 of 128. The screen is static and redrawn only on a click.
+
+To use your own grinder or ranges, edit `GRIND_CHART`: one `{from, to, "Name"}` row
+per method, both ends inclusive, table order = display order (and decides which
+four show when more overlap); `{}` turns the labels off. Rebuild both firmwares
+(`make plain`, `make esphome`). `make plain-test` checks the table (from ≥ 0,
+from ≤ to, a non-empty name), the matched names and their order for every count
+0…100 against the table (so it follows your edits), and the cap (only the first
+names are kept, the full match count is still reported). One literal spot check of
+the shipped rows in
+[`tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp), under
+"shipped table; update if you edit it", fails when your edit changes what 0, 7 or
+41 shows — update those lines with it.
 
 ### Flashing
 
@@ -295,6 +348,9 @@ per click; the blue GPIO8 blink on boot = MCU alive; then meter the OLED header
 (VCC 3.3 V, SDA/SCL idle at 3.3 V) and reflow. A deep-sleeping ESP32-C3 does
 **not** wake when USB is plugged in — only a button or RST does — and with the
 slide switch ON a USB plug back-feeds the cell ([Power notes](#power-notes)).
+Digits cut off at the top with blank rows below were a placement bug in the plain
+firmware (U8g2's centre mode on a font with a deep descent), not the panel — fixed
+2026-10-11; reflash.
 
 ### Fit tuning
 
@@ -367,7 +423,7 @@ make                  # case + plain + esphome
 | `make case-verify` | 105 geometry checks on in-memory builds (70 with `--snap-bite 0`, 101 with `--omit-engraving`), exit 1 on failure | PASS/FAIL table |
 | `make vendor` | fetch the latest three.js module build (stdlib-only, bare `python:3.14-slim`) | `case/vendor/three.{module,core}.min.js`, `THREE_VERSION` |
 | `make plain` | build image, `pio run`, copy the factory image | `firmware/plain/build/tally-plain.factory.bin` |
-| `make plain-test` | state-machine self-test in `gcc:14` | `OK` |
+| `make plain-test` | state-machine + grind-chart self-test in `gcc:14` | `OK` |
 | `make esphome` | `esphome compile` (needs `secrets.yaml`) | `firmware/esphome/.esphome/build/tally/build/firmware.{factory,ota}.bin` |
 | `make esphome-config` | `esphome config` | validated YAML |
 | `make esphome-ota` | `esphome run --device $(DEVICE)` | flashed device |
@@ -448,6 +504,10 @@ order they'd bite:
 - The ESPHome **`millis() > 1500` wake-press guard** (the press that woke the chip
   is already ON at boot; its release must not count) — margin chosen by reasoning,
   not measured boot time.
+- **Brew-label layout and 400 kHz I2C** (both builds, 2026-10-11) — the pixel rows
+  of the digits and the stacked names come from a host render of U8g2, not the
+  panel; whether every OLED module takes 400 kHz is untested (ESPHome: try
+  `i2c: timeout: 10ms` first).
 - **Friction fit 0.28 mm** is filtarr's calibrated value on a different, larger
   part; expect to tune `--clear-friction`.
 - **Snap detents** — 0.4 mm bite, 8 mm bumps, 45° ramps: click force, pry-off

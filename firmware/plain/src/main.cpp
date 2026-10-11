@@ -2,6 +2,7 @@
 #include <Preferences.h>
 #include <U8g2lib.h>
 #include <esp_sleep.h>
+#include "grind_chart.h"
 #include "tally_logic.h"
 
 constexpr int BTN_UP = 3, BTN_DOWN = 4;
@@ -9,20 +10,52 @@ constexpr int BTN_UP = 3, BTN_DOWN = 4;
 // Lit only while setup() runs, so a blink on every boot/wake proves the MCU is alive with a dark OLED.
 constexpr int LED_PIN = 8;
 constexpr uint32_t IDLE_SLEEP_MS = 60000;
+#ifndef SAVE_DELAY_MS
+#define SAVE_DELAY_MS 2000  // see platformio.ini build_flags
+#endif
 
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE, /*clock=*/7, /*data=*/6);
 Preferences prefs;
 Tally tally;
+bool dirty = false;
+uint32_t dirty_since = 0;
+
+// Baselines in the default U8g2 mode: a glyph with no descent fills the rows just above y.
+constexpr int BIG_BASELINE = 30;  // logisoso28 (28 px digits): rows 2..29, the same with or without labels
+constexpr int LABEL_GAP = 6;      // px between the digits and the label column
 
 static void draw() {
-  char buf[8];
-  snprintf(buf, sizeof buf, "%ld", (long)tally.count);
+  char num[8];
+  snprintf(num, sizeof num, "%ld", (long)tally.count);
+  const char *names[GRIND_MAX_LINES];
+  int n = grind_matches(tally.count, names, GRIND_MAX_LINES);
+  if (n > GRIND_MAX_LINES) n = GRIND_MAX_LINES;
+  // 3 lines of 6x10 (10 px pitch, 7 px caps) fill the 32 px height; a 4th needs 5x8 (8 px, 6 px caps)
+  const uint8_t *font = n > 3 ? u8g2_font_5x8_tf : u8g2_font_6x10_tf;
+  int pitch = n > 3 ? 8 : 10, cap = n > 3 ? 6 : 7;
   u8g2.clearBuffer();
-  u8g2.drawStr((128 - u8g2.getStrWidth(buf)) / 2, 16, buf);
+  u8g2.setFont(font);
+  int lw = 0;
+  for (int i = 0; i < n; i++) lw = max(lw, (int)u8g2.getStrWidth(names[i]));
+  u8g2.setFont(u8g2_font_logisoso28_tn);
+  int nw = u8g2.getStrWidth(num);
+  int gap = n ? LABEL_GAP : 0;  // no labels: the digits alone are centred
+  int x0 = max(0, (128 - (nw + gap + lw)) / 2);  // an over-long name clips at the right edge
+  u8g2.drawStr(x0, BIG_BASELINE, num);
+  u8g2.setFont(font);
+  int top = (32 - pitch * n) / 2;  // the block of n lines is centred vertically
+  for (int i = 0; i < n; i++) u8g2.drawStr(x0 + nw + gap, top + pitch * i + 1 + cap, names[i]);
   u8g2.sendBuffer();
 }
 
+static void flush() {
+  if (!dirty) return;
+  prefs.putInt("count", tally.count);
+  dirty = false;
+}
+
 static void sleepNow() {
+  flush();
   u8g2.setPowerSave(1);
   uint64_t mask = (digitalRead(BTN_UP) ? BIT(BTN_UP) : 0) | (digitalRead(BTN_DOWN) ? BIT(BTN_DOWN) : 0);
   if (mask) esp_deep_sleep_enable_gpio_wakeup(mask, ESP_GPIO_WAKEUP_GPIO_LOW);  // a held/stuck pin would re-wake instantly
@@ -40,9 +73,8 @@ void setup() {
   prefs.begin("tally");
   tally.count = prefs.getInt("count", 0);
   Serial.printf("count=%ld (restored)\n", (long)tally.count);
+  u8g2.setBusClock(400000);  // a full frame takes ~50 ms at the 100 kHz default and would starve button polling
   u8g2.begin();
-  u8g2.setFont(u8g2_font_logisoso28_tn);
-  u8g2.setFontPosCenter();
   draw();
   digitalWrite(LED_PIN, HIGH);
   pinMode(LED_PIN, INPUT);  // the pull-up keeps it off through deep sleep at zero drive
@@ -57,11 +89,13 @@ void loop() {
   uint32_t now = millis();
   if (tally.update(!digitalRead(BTN_UP), !digitalRead(BTN_DOWN), now)) {
     draw();
-    // Write per click: NVS is log-structured, a 4-byte entry per click into the 20 KB default
-    // partition is tens of millions of clicks before wear matters, and a power cut never loses one.
-    prefs.putInt("count", tally.count);
+    // Deferred: written SAVE_DELAY_MS after the last change so a burst of clicks is one NVS write;
+    // sleepNow() flushes first, so deep sleep never loses a pending count.
+    dirty = true;
+    dirty_since = now;
     Serial.printf("count=%ld\n", (long)tally.count);
   }
+  if (dirty && now - dirty_since >= SAVE_DELAY_MS) flush();
   if (now - tally.last_activity_ms >= IDLE_SLEEP_MS) sleepNow();
   delay(5);
 }

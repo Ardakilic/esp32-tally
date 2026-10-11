@@ -2,10 +2,13 @@ substitutions:
   name: tally
   friendly_name: Tally Counter
   idle_sleep: 60s
+  save_delay: 2s  # time between flash writes of the count; a burst of clicks becomes one NVS write
 
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
+  includes:
+    - ../common/grind_chart.h  # GRIND_CHART, grind_matches(); shared with the plain build
   on_boot:
     - script.execute: idle_timer
   on_shutdown:
@@ -40,16 +43,14 @@ ota:
     encryption:  # reuses the api key
 
 preferences:
-  # 1ms (= what 0s is coerced to, minus the validator warning): a queued save hits NVS on the next loop.
-  # NVS is log-structured, a 4-byte entry per click into the 20 KB partition is tens of millions of clicks
-  # before wear matters, and a power cut never loses one.
-  flash_write_interval: 1ms
+  # the global queues the new value in RAM at once, the syncer writes it to NVS every ${save_delay}; deep sleep's shutdown hook flushes first
+  flash_write_interval: ${save_delay}
 
 globals:
   - id: count
     type: int
     restore_value: true
-    update_interval: 1ms  # restoring globals poll for changes (default 1s); now every loop, then the preferences syncer writes
+    update_interval: 1ms  # queue changes every loop (default 1s); RAM only, no flash cost
     initial_value: "0"
   - id: combo  # true while a both-buttons reset is in progress; suppresses the ±1 on release
     type: bool
@@ -58,20 +59,52 @@ globals:
 i2c:
   sda: GPIO6
   scl: GPIO7
+  frequency: 400kHz  # default 50 kHz: a 512-byte frame takes ~90 ms per click redraw
 
 font:
   - file: "gfonts://Roboto@700"
-    id: big
+    id: big  # the count: 20 px digits, ink rows 6..25 at baseline 26, alone or left of the labels
     size: 28
     glyphs: "0123456789"
+  - file: "gfonts://Roboto@400"
+    id: label  # 1-3 brew labels at a 10 px pitch: caps 7 px, ascender-to-descender ink 10 px
+    size: 10
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /-"
+  - file: "gfonts://Roboto@400"
+    id: label4  # 4 brew labels at an 8 px pitch: caps 6 px, ink 8 px
+    size: 8
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /-"
 
 display:
   - platform: ssd1306_i2c
     id: oled
     model: "SSD1306 128x32"
     address: 0x3C
-    update_interval: never
-    lambda: it.printf(it.get_width() / 2, it.get_height() / 2, id(big), TextAlign::CENTER, "%d", id(count));
+    update_interval: never  # redrawn only by the refresh script on a click
+    lambda: |-
+      // Same layout as the plain build: the count in the big font, matching GRIND_CHART names stacked to its right.
+      const int big_y = 26, gap = 6;  // digit baseline (ink rows 6..25 in both branches); px between digits and labels
+      const char *names[GRIND_MAX_LINES];
+      int n = grind_matches(id(count), names, GRIND_MAX_LINES);
+      if (n > GRIND_MAX_LINES) n = GRIND_MAX_LINES;
+      if (n == 0) { it.printf(it.get_width() / 2, big_y, id(big), TextAlign::BASELINE_CENTER, "%d", id(count)); return; }
+      // 3 lines of label (10 px pitch) fill the height, a 4th needs label4 (8 px). TOP aligns the ascender line;
+      // X sits 3 (label) / 2 (label4) px below it, so dy puts the caps 1 px into each line: rows as the plain build.
+      auto *f = n <= 3 ? id(label) : id(label4);
+      int pitch = n <= 3 ? 10 : 8, dy = n <= 3 ? -2 : -1;
+      char num[8];
+      snprintf(num, sizeof num, "%d", id(count));
+      int x1, y1, nw, lw = 0, w, h;
+      it.get_text_bounds(0, 0, num, id(big), TextAlign::TOP_LEFT, &x1, &y1, &nw, &h);
+      for (int i = 0; i < n; i++) {
+        it.get_text_bounds(0, 0, names[i], f, TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+        if (w > lw) lw = w;
+      }
+      int x0 = (it.get_width() - (nw + gap + lw)) / 2;  // digits + gap + widest label, centred as a group
+      if (x0 < 0) x0 = 0;
+      it.print(x0, big_y, id(big), TextAlign::BASELINE_LEFT, num);
+      int top = (it.get_height() - pitch * n) / 2;  // the block of n lines is centred vertically
+      for (int i = 0; i < n; i++) it.print(x0 + nw + gap, top + pitch * i + dy, f, TextAlign::TOP_LEFT, names[i]);
 
 deep_sleep:
   id: ds

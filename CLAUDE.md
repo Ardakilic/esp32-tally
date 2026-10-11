@@ -17,11 +17,16 @@ enabled once by hand).
 
 ```
 Makefile                       canonical build: every target is a `docker run`
+firmware/common/grind_chart.h  shared brew table GRIND_CHART + GRIND_MAX_LINES + grind_matches();
+                               plain `-I ../common` (build_flags), ESPHome `esphome: includes:`
 firmware/plain/                PlatformIO + Arduino 3.3.12 (pioarduino 55.03.312-1), U8g2 2.36.18
   src/tally_logic.h            pure C++ state machine (debounce, clamp, both-held reset)
-  src/main.cpp                 pins, U8g2, Preferences/NVS (written per click), deep sleep,
-                               seeded button state, GPIO8 boot blink, serial boot banner
-  test/tally_logic_test.cpp    assert self-test, runs in gcc:14 — the committed test
+  src/main.cpp                 pins, U8g2 (big digits, brew labels stacked to their right, drawn
+                               on a click only), Preferences/NVS (2 s after last click), deep
+                               sleep, seeded button state, GPIO8 boot blink, serial boot banner
+  test/tally_logic_test.cpp    assert self-test: state machine + grind chart (table sanity, match
+                               oracle 0..100, max 0 / max 1 cap, one shipped-table spot check),
+                               runs in gcc:14 — the committed test
   Dockerfile                   python:3.12-slim + platformio 6.2.0 + git, PLATFORMIO_CORE_DIR=/pio
   build/tally-plain.factory.bin  output (gitignored with .pio/)
 firmware/esphome/tally.yaml    ESPHome 2026.9.1, esp-idf; secrets.yaml (gitignored) from .example
@@ -49,8 +54,8 @@ make case            # image-case, generate.py, render_docs.py -> case/stl, case
                      # index.html, case/docs
 make case-verify     # verify.py in a throwaway container (requirements-dev.txt extras)
 make vendor          # refresh both three.js files in case/vendor/ (bare python:3.14-slim)
-make plain           # pio run -> firmware/plain/build/tally-plain.factory.bin (403 KiB)
-make plain-test      # host self-test, prints OK
+make plain           # pio run -> firmware/plain/build/tally-plain.factory.bin (407 KiB)
+make plain-test      # host self-test, firmware/ at /work, -Isrc -I../common; prints OK
 make esphome         # compile; fails with a message if secrets.yaml is missing
 make esphome-config  # validate only
 make esphome-ota     # DEVICE ?= tally.local — turn on "Keep Awake" in HA first
@@ -63,8 +68,8 @@ make case OMIT_ENGRAVING=1      # appends --omit-engraving (plain lid top)
 
 Expected results: verify `105 checks — ALL PASS` (70 with `--snap-bite 0`, 101 with
 `--omit-engraving`);
-plain RAM 4.6 % / Flash 25.2 %;
-ESPHome Flash 51 % / RAM 33 %, factory bin 983 KB.
+plain RAM 4.6 % / Flash 25.5 %, factory bin 407 KiB (416640 bytes);
+ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1010880 bytes).
 
 ## Technology decisions (and why)
 
@@ -79,7 +84,17 @@ ESPHome Flash 51 % / RAM 33 %, factory bin 983 KB.
   the Arduino wrapper. `reboot_timeout: 0s` on wifi and api — the counter must
   keep working with no Wi-Fi/HA.
 - **U8g2 as the single plain-build dependency**: one lib for SSD1306 128 × 32 over
-  hardware I2C plus a 28 px numeric font (`logisoso28_tn`); no GFX + BusIO pair.
+  hardware I2C plus its fonts — `logisoso28_tn` (count), `6x10_tf` (1–3 brew labels),
+  `5x8_tf` (4 labels); no GFX + BusIO pair. `setBusClock(400000)` before `begin()`: a
+  512-byte frame takes ~13 ms instead of ~50 ms at the 100 kHz default, so the redraw
+  after a click blocks button polling less.
+- **One shared grind-chart header** (`firmware/common/grind_chart.h`: `GRIND_CHART`,
+  `GRIND_MAX_LINES`, `grind_matches()`): one place for users to edit the brew table,
+  and both builds plus the host test compile the same file, so they cannot drift.
+  `RUN_PLAIN`/`RUN_ESPHOME` mount the repo root at `/app` (workdir
+  `/app/firmware/plain` / `/app/firmware/esphome`) so `..` resolves; plain adds
+  `-I ../common` to `build_flags`, ESPHome lists `../common/grind_chart.h` under
+  `esphome: includes:` (accepts `..`, copies it into the build's `src/`).
 - **shapely + trimesh + manifold3d, not CadQuery/OpenSCAD**: the filtarr stack —
   2D outlines → extrude → booleans, same Dockerfile pattern, pinned so STL bytes
   are reproducible. The "+"/"−" cap symbols are rectangles; the only text is the
@@ -135,6 +150,22 @@ ESPHome Flash 51 % / RAM 33 %, factory bin 983 KB.
   counts on release, 20 ms debounce, 0…99999, both held ≥ 1 s → 0 and the two
   releases are swallowed, 60 s idle → OLED off + deep sleep, the wake press is not
   counted.
+- **OLED rows** (128 × 32; the count sits at the same rows with or without labels, the
+  labels are stacked to its right, block centred vertically). Plain (explicit baselines,
+  default U8g2 font position): `logisoso28_tn` baseline 30 → digits rows 2..29;
+  `6x10_tf` (7 px caps, 10 px pitch) for 1–3 lines → caps 12..18 (1), 7..13 / 17..23
+  (2), 2..8 / 12..18 / 22..28 (3, descenders to 30); `5x8_tf` (6 px caps, 8 px pitch)
+  for 4 → caps 1..6 / 9..14 / 17..22 / 25..30, descenders on 7, 15, 23, 31 — from a
+  host render of the real U8g2 2.36.18 C library (frame-buffer dump); widest shipped
+  group = count 26, right edge at column 120, nothing clips. ESPHome: `big` Roboto
+  700/28 at y 26, `BASELINE_LEFT` (labels) / `BASELINE_CENTER` (none) → digits rows
+  6..25 in both branches; `label` Roboto 400/10 (`TOP_LEFT`, −2 px, 10 px pitch) for
+  1–3, `label4` Roboto 400/8 (−1 px, 8 px pitch) for 4 → the same cap rows as plain.
+  Size-10 lines touch (10 px ink in a 10 px pitch) but don't overlap; a descender on a
+  4th line would fall on row 32 and be cut (no shipped name has one). Old bug (up to
+  9344739): `setFontPosCenter()` + y 16 with `logisoso28_tn`, whose header has
+  ascent 28 / descent −7 (glyphs the counter never prints) → baseline 26, digits
+  rows −2..25: two rows cut off the top, six blank below — matched Arda's photo.
 
 ## Design map (case)
 
@@ -276,13 +307,38 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   the restored count. GPIO8 (`LED_PIN`, blue LED, active-LOW, 10 k pull-up,
   strapping pin) is driven LOW for the length of `setup()` (≈0.3 s, mostly U8g2's
   2 × 100 ms + 100 ms SSD1306 reset delays) then returned to INPUT — a blink with
-  a dark OLED means MCU alive, display dead. NVS is written on every click
-  (`putInt` commits itself; log-structured, tens of millions of clicks before
-  wear matters) — a power cut never loses one.
-- ESPHome: restoring `globals` only poll for changes every 1 s (`PollingComponent(1000)`)
-  → `update_interval: 1ms` on `count` **and** `preferences: flash_write_interval: 1ms`
-  (`0s` is coerced to 1 ms plus a validator warning; the syncer is itself a poller
-  since 2026.9); either alone leaves a window.
+  a dark OLED means MCU alive, display dead. NVS is written once, `SAVE_DELAY_MS`
+  (build flag, 2000) after the last change: a click marks the count dirty, `loop()`
+  flushes it (`putInt` commits itself), `sleepNow()` flushes first. Switching off
+  within 2 s of a click can lose that click.
+- **I2C 400 kHz** on both builds: plain `setBusClock`, ESPHome `i2c: frequency:
+  400kHz` (default 50 kHz ≈ 90 ms/frame), so a click's redraw blocks the loop less.
+  OLED misbehaving at 400 kHz on esp-idf → try `i2c: timeout: 10ms` first.
+- **Grind chart**: `GRIND_CHART` rows `{from, to, "Name"}`, inclusive;
+  `grind_matches(count, out, max)` fills up to `max` names in table order and returns
+  the total match count (may exceed `max`); both builds pass `GRIND_MAX_LINES` (4) and
+  draw at most that many — extra matches are simply not shown. An empty
+  `GRIND_CHART[] = {}` (zero-length array) turns the labels off and compiles under
+  g++ 14 `-Wall -Wextra -Werror`; only `-Wpedantic` rejects it, so don't add that.
+  Layout: digits + 6 px gap + widest label centred as a group,
+  `x0 = max(0, (128 − (nw + 6 + lw)) / 2)`, so with no label the digits are centred as
+  before (plain `draw()` is one path, n = 0 zeroes gap and label width; ESPHome has a
+  `BASELINE_CENTER` branch); an over-long user name clips at the right edge. Side by
+  side, not stacked: 28 px digits + a 7 px cap-height line exceed 32 rows, and Arda
+  found the 21 px-digit stacked version cramped on the device. Static screen: plain
+  redraws from `loop()` on a count change, ESPHome display `update_interval: never` +
+  the `refresh` script on a click. The test's oracle recomputes the names from the
+  table (survives edits); the one literal spot check (7 → Turkish, Espresso; 0 and
+  41 → none) under "shipped table; update if you edit it" **must be updated** whenever
+  the shipped rows change (an empty table fails only that check).
+- `make plain-test` mounts `firmware/` at `/work` and runs in `/work/plain` with
+  `-Isrc -I../common`; the old one-dir `firmware/plain:/work` mount no longer finds
+  `grind_chart.h` (likewise the old `/work` / `/config` mounts of `RUN_PLAIN` /
+  `RUN_ESPHOME`).
+- ESPHome: `save_delay` substitution (2s) → `preferences: flash_write_interval`; the
+  syncer is a poller, so it writes on a fixed tick, not 2 s after the last click.
+  `update_interval: 1ms` on `count` is RAM-only (restoring globals poll every 1 s by
+  default, then queue in RAM); deep sleep's shutdown hooks save the global, then sync.
 - gfonts Roboto is downloaded at ESPHome compile time → the container needs
   internet on a cold cache.
 - **No USB passthrough in Docker Desktop on macOS**: flash via web.esphome.io in
@@ -308,8 +364,12 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   mirrored-pinout bug (d957647). Field incident: a hot-glued cell/TP4056 under
   the board shorted/stressed the solder side and kept the OLED dark until the glue
   came off → insulate the solder side and mount both to the floor with foam tape
-  (README → Assembly, Field notes). Open points: USB-C alignment (1.4 mm wall,
-  plug seating), snap feel (`--snap-bite`, `--clear-friction`, the PLA 0.3
-  guess), OLED window offset `OLED_AA_DX`, engraving legibility, the ESPHome
-  variant (untested on hardware, incl. the 1.5 s wake guard), and the 100 mAh cell
-  needs R_PROG ≥ 12 kΩ (default 1.2 kΩ = 1 A).
+  (README → Assembly, Field notes). Top-clipped digits on the first flash were a
+  software bug (`setFontPosCenter`, see Verified data → OLED rows), fixed
+  2026-10-11. Open points: USB-C alignment (1.4 mm wall, plug seating), snap feel
+  (`--snap-bite`, `--clear-friction`, the PLA 0.3 guess), OLED window offset
+  `OLED_AA_DX`, engraving legibility, the ESPHome variant (untested on hardware,
+  incl. the 1.5 s wake guard), the brew-label layout (labels one per line right of
+  the digits) and 400 kHz I2C (both builds, untested on hardware; the stacked
+  digits-over-label layout was rejected by Arda on 2026-10-11 as cramped), and the
+  100 mAh cell needs R_PROG ≥ 12 kΩ (default 1.2 kΩ = 1 A).

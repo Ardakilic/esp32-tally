@@ -39,8 +39,8 @@ DEVICE        ?= tally.local
 # the whole repo is mounted (generate.py writes the Pages index.html to the root)
 RUN         := docker run --rm -v "$(CURDIR)":/app -w /app/case
 RUN_CASE    := $(RUN) $(IMAGE_CASE)
-RUN_PLAIN   := docker run --rm -v "$(CURDIR)/firmware/plain":/work -v $(VOL_PIO):/pio $(IMAGE_PLAIN)
-RUN_ESPHOME := docker run --rm -v "$(CURDIR)/firmware/esphome":/config -v $(VOL_ESPHOME):/cache $(ESPHOME_IMAGE)
+RUN_PLAIN   := docker run --rm -v "$(CURDIR)":/app -w /app/firmware/plain -v $(VOL_PIO):/pio $(IMAGE_PLAIN)
+RUN_ESPHOME := docker run --rm -v "$(CURDIR)":/app -w /app/firmware/esphome -v $(VOL_ESPHOME):/cache $(ESPHOME_IMAGE)
 SECRETS     := firmware/esphome/secrets.yaml
 
 .PHONY: all case case-verify vendor image-case plain plain-test image-plain \
@@ -79,8 +79,8 @@ plain: image-plain
 	@echo "-> firmware/plain/build/tally-plain.factory.bin"
 
 plain-test:
-	docker run --rm -v "$(CURDIR)/firmware/plain":/work -w /work $(GCC_IMAGE) sh -c \
-		'g++ -std=c++17 -Wall -Wextra -Werror -Isrc test/tally_logic_test.cpp -o /tmp/t && /tmp/t'
+	docker run --rm -v "$(CURDIR)/firmware":/work -w /work/plain $(GCC_IMAGE) sh -c \
+		'g++ -std=c++17 -Wall -Wextra -Werror -Isrc -I../common test/tally_logic_test.cpp -o /tmp/t && /tmp/t'
 
 # ---- ESPHome firmware (Home Assistant) -------------------------------------
 
