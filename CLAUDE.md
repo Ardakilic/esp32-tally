@@ -61,7 +61,7 @@ make esphome         # compile; fails with a message if secrets.yaml is missing
 make esphome-config  # validate only
 make esphome-ota     # DEVICE ?= tally.local — turn on "Keep Awake" in HA first
 make clean           # case/stl case/docs case/preview.html index.html .pio build .esphome (volumes stay)
-make case GEN_ARGS="--clear-friction 0.32 --tact-height 4.3 --battery 30x40x5"
+make case GEN_ARGS="--clear-friction 0.32 --tact-height 5 --battery 30x40x5"
 make case GEN_ARGS="--snap-bite 0.3"   # PLA lid; 0 = no detents (plain friction fit)
 make case ENGRAVING="My Text"   # appends --engraving "My Text" to GEN_ARGS
 make case OMIT_ENGRAVING=1      # appends --omit-engraving (plain lid top)
@@ -208,8 +208,8 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   Engraving: ENGRAVE_TEXT "Grindarr" (None = omitted) recessed ENGRAVE_DEPTH 0.6
   into the top face, ENGRAVE_H 6.0 cap height (auto-shrunk to the free band),
   centred ENGRAVE_XY (0, −13), ENGRAVE_FONT Liberation Sans Bold, reading along
-  +X, upright toward Y+. Caps: stem Ø8.0, flange Ø11 × 2.2 (LID_CLEAR − TACT_H −
-  0.3), stem 5.5 (1 mm proud), Ø3.8 × 0.5 recess centres on the plunger, 0.5 mm
+  +X, upright toward Y+. Caps: stem Ø8.0, flange Ø11 × 2.9 (LID_CLEAR − TACT_H −
+  0.3), stem 6.2 (1 mm proud), Ø3.8 × 0.5 recess centres on the plunger, 0.5 mm
   embossed symbol.
 - **Snap detents** (one per SNAP_SITES entry; `snap_bump()` unions onto the lid,
   `snap_groove()` is a base cutter, both stood against the wall by

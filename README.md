@@ -53,7 +53,7 @@ as ghosts.*
 |---|---|
 | ESP32-C3 Super Mini | the 18 × 22.5 mm board with two 8-pin rows; on male pin headers |
 | 0.91" SSD1306 OLED, 128 × 32, I2C | 4-pin header (GND VCC SCL SDA on most — verify yours), address 0x3C |
-| 2 × 6 × 6 mm tact switches | any height 4.3–6 mm; default 5.0, see [`--tact-height`](#fit-tuning) |
+| 2 × 6 × 6 mm tact switches | any height 4.3–6 mm; default 4.3, see [`--tact-height`](#fit-tuning) |
 | TP4056 USB-C charger module | the common 17 × 28 mm board **with** DW01 protection (the variant with OUT+/OUT− pads); 1 A default |
 | SS12D00 slide switch | 3-pin, 1P2T, 8.8 × 3.9 × 3.5 mm body, 2 mm travel |
 | 1S LiPo pouch, 503450 | 34 × 50 × 5 mm, 1000 mAh, with PCM and JST-PH lead; other sizes via [`--battery`](#fit-tuning) (T ≤ 7 mm) |
@@ -271,8 +271,8 @@ same constants drive the README images and the geometry self-test.
 |---|---|---|---|
 | [`case/stl/tally-base.stl`](case/stl/tally-base.stl) | 58.0 × 57.6 × 20.1 | 17.2 cm³ | upright, as exported |
 | [`case/stl/tally-lid.stl`](case/stl/tally-lid.stl) | 58.0 × 57.6 × 9.5 | 7.4 cm³ | as exported (top face down) |
-| [`case/stl/tally-cap-plus.stl`](case/stl/tally-cap-plus.stl) | 11 × 11 × 6 | 0.4 cm³ | on its flange, as exported |
-| [`case/stl/tally-cap-minus.stl`](case/stl/tally-cap-minus.stl) | 11 × 11 × 6 | 0.4 cm³ | on its flange, as exported |
+| [`case/stl/tally-cap-plus.stl`](case/stl/tally-cap-plus.stl) | 11 × 11 × 6.7 | 0.4 cm³ | on its flange, as exported |
+| [`case/stl/tally-cap-minus.stl`](case/stl/tally-cap-minus.stl) | 11 × 11 × 6.7 | 0.4 cm³ | on its flange, as exported |
 
 Closed: **58.0 × 57.6 × 22.1 mm** (frame opening 50.6 × 50.6, cavity 54.0 × 53.6).
 Shell 2.0 mm walls / floor / lid plate, 1.2 mm lid skirt, 4 mm outer corner radius.
@@ -362,7 +362,7 @@ command-line flags shared by the generator, the image renderer and the verifier:
 |---|---|---|
 | `--clear-friction` | 0.28 mm | lid skirt clearance to the frame per side (filtarr's calibrated value); tune in ±0.04 steps |
 | `--snap-bite` | 0.4 mm | how far the four lid snap detents bite past the frame's inner face (PETG); PLA ≈ 0.3; `0` = no detents, the plain friction fit (STLs byte-identical to the pre-snap case) |
-| `--tact-height` | 5.0 mm | tact switch height, PCB top to plunger top — 4.3 / 5 / 6 are fine, ≤ 6.0 with the default 7.5 mm lid clearance |
+| `--tact-height` | 4.3 mm | tact switch height, PCB top to plunger top — 4.3 / 5 / 6 are fine, ≤ 6.0 with the default 7.5 mm lid clearance |
 | `--battery` | 34x52x6 | battery pouch envelope W×L×T incl. tabs and swelling; T ≤ 7 |
 | `--engraving TEXT` | `Grindarr` | text engraved into the lid top ([Engraving](#engraving)); shortcut `make case ENGRAVING="My Text"` |
 | `--omit-engraving` | off | plain lid top, no text; shortcut `make case OMIT_ENGRAVING=1` |
@@ -370,11 +370,11 @@ command-line flags shared by the generator, the image renderer and the verifier:
 ```bash
 make case GEN_ARGS="--clear-friction 0.32"                  # lid too tight
 make case GEN_ARGS="--snap-bite 0.3"                        # PLA lid; 0 = no detents
-make case GEN_ARGS="--tact-height 4.3"                      # shorter switches
+make case GEN_ARGS="--tact-height 5"                        # taller switches
 make case GEN_ARGS="--battery 30x40x5"                      # smaller cell
 make case ENGRAVING="My Text"                               # other lid text
-make case OMIT_ENGRAVING=1 GEN_ARGS="--tact-height 4.3"     # plain lid; combinable
-make case-verify GEN_ARGS="--clear-friction 0.32 --tact-height 4.3"   # check before printing
+make case OMIT_ENGRAVING=1 GEN_ARGS="--tact-height 5"       # plain lid; combinable
+make case-verify GEN_ARGS="--clear-friction 0.32 --tact-height 5"   # check before printing
 ```
 
 Every other dimension (walls, PCB_Z 9, LID_CLEAR 7.5, window 27 × 9, switch

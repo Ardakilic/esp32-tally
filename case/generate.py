@@ -81,7 +81,7 @@ PCB_T = 1.6            # FR4 thickness
 PCB_CLEAR = 0.3        # per side, so the board drops into the frame
 
 # 6 x 6 tact switches (two: left = DOWN "-", right = UP "+")
-TACT_H = 5.0           # PCB top to plunger top; kits ship 4.3/5/6/7 (--tact-height)
+TACT_H = 4.3           # PCB top to plunger top; kits ship 4.3/5/6/7 (--tact-height)
 TACT_PLUNGER_D = 3.5   # plunger diameter (the cap's underside recess centres on it)
 
 # Battery pouch: 503450 cell 34 x 50 x 5 + PCM tab + 1 mm swelling (--battery)
