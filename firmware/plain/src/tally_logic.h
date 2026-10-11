@@ -42,3 +42,11 @@ struct Tally {
     return count != before;
   }
 };
+
+// One NVS write per burst: every change restarts the delay; due() once delay_ms passed with no change.
+struct SaveDelay {
+  bool dirty = false;
+  uint32_t since = 0;
+  void touch(uint32_t now) { dirty = true; since = now; }
+  bool due(uint32_t now, uint32_t delay_ms) const { return dirty && now - since >= delay_ms; }
+};

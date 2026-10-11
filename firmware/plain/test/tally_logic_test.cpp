@@ -16,6 +16,20 @@ static bool hold(bool up, bool down, uint32_t ms) {
   return changed;
 }
 
+// SaveDelay driven like main.cpp's loop; `writes` stands in for prefs.putInt.
+constexpr uint32_t SAVE_MS = 2000;
+static SaveDelay sv;
+static int writes = 0;
+static int32_t written = -1;
+static void tick(bool up, bool down) {
+  if (t.update(up, down, now)) sv.touch(now);
+  if (sv.due(now, SAVE_MS)) { ++writes; written = t.count; sv.dirty = false; }
+  now += 5;
+}
+static void run(bool up, bool down, uint32_t ms) { for (uint32_t end = now + ms; now < end;) tick(up, down); }
+// one click, padded to `period` ms
+static void click(uint32_t period) { run(true, false, 50); run(false, false, period - 50); }
+
 int main() {
   // click = press then release
   assert(!hold(true, false, 50));
@@ -110,6 +124,48 @@ int main() {
     assert(grind_matches(7, out, GRIND_MAX_LINES) == 2 && !strcmp(out[0], "Turkish") && !strcmp(out[1], "Espresso"));
     assert(grind_matches(0, out, GRIND_MAX_LINES) == 0);
     assert(grind_matches(41, out, GRIND_MAX_LINES) == 0);
+  }
+
+  // SaveDelay: a burst is one write, after the last click + SAVE_MS
+  {
+    t = Tally(); sv = SaveDelay(); writes = 0;
+    for (int i = 0; i < 10; ++i) click(300);
+    assert(writes == 0 && sv.dirty && t.count == 10);
+    while (now < sv.since + SAVE_MS - 1) tick(false, false);
+    assert(writes == 0 && sv.dirty);
+    while (writes == 0) tick(false, false);
+    assert(now - 5 - sv.since == SAVE_MS && written == 10 && !sv.dirty);
+    run(false, false, 10000);
+    assert(writes == 1);
+  }
+  // gaps under the delay never write; the pause after the last click writes the final value
+  {
+    t = Tally(); sv = SaveDelay(); writes = 0;
+    for (int i = 0; i < 40; ++i) click(1500);
+    assert(writes == 0 && t.count == 40);
+    run(false, false, 2000);
+    assert(writes == 1 && written == 40);
+  }
+  // millis() wrap
+  {
+    SaveDelay d;
+    d.touch(0xFFFFFC00u);
+    uint32_t due_at = 0xFFFFFC00u + SAVE_MS;  // wraps past 0
+    assert(due_at < 0xFFFFFC00u);
+    assert(!d.due(due_at - 1, SAVE_MS) && d.due(due_at, SAVE_MS));
+  }
+  // delay 0 = every change
+  {
+    SaveDelay d;
+    assert(!d.due(500, 0));
+    d.touch(500);
+    assert(d.due(500, 0));
+  }
+  // not yet due but dirty: sleepNow()'s flush() still has something to write
+  {
+    SaveDelay d;
+    d.touch(100);
+    assert(!d.due(100 + SAVE_MS - 1, SAVE_MS) && d.dirty);
   }
 
   puts("OK");

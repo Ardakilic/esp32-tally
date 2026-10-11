@@ -29,13 +29,14 @@ as ghosts.*
   [`firmware/common/grind_chart.h`](firmware/common/grind_chart.h), shared by both
   firmwares; an empty table turns the labels off
   ([Brew-method labels](#brew-method-labels-grind-chart)).
-- Count **saved to flash 2 s after the last click** (NVS on the plain build, ESPHome
-  `globals` with `restore_value` on the other, written on the next 2 s sync): a burst
-  of clicks becomes one write and deep sleep flushes first, but switching off within
-  2 s of a click can lose that click. NVS is log-structured, so even one write per
-  click would be tens of millions of clicks before wear matters. Configurable:
-  `SAVE_DELAY_MS` in `firmware/plain/platformio.ini` `build_flags`, the `save_delay`
-  substitution in `firmware/esphome/tally.yaml`.
+- Count **saved to flash once per burst, on both firmwares**: every click restarts a
+  2 s timer, clicking with gaps under 2 s never writes, and the pause after the last
+  click writes the final count once. Going to sleep writes a pending count first; a
+  power cut (slide switch off) during a burst or within 2 s of the last click loses the
+  clicks since the previous write. Plain: `SAVE_DELAY_MS` in
+  `firmware/plain/platformio.ini` `build_flags` (0 = every click). ESPHome: the
+  `save_delay` substitution, used by the restart-mode `save_later` script, with
+  `flash_write_interval: never`.
 - **60 s idle → OLED off + deep sleep**; either button wakes it (that press is not
   counted). Slide switch = hard power off.
 - **Charging over USB-C** through a TP4056 module with cell protection; the ESP32's
@@ -151,10 +152,10 @@ are gitignored — `make` regenerates them from pinned Docker images.
 | File | Role |
 |---|---|
 | [`platformio.ini`](firmware/plain/platformio.ini) | platform / board / U8g2 pins, `build_flags` (`SAVE_DELAY_MS`, `-I ../common`) |
-| [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine — pure C++, no Arduino |
-| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED (big count with the matching brew methods stacked to its right, redrawn only on a click), NVS (`Preferences`, written 2 s after the last click), deep sleep, boot blink + serial banner |
+| [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine and the save-delay rule (`struct SaveDelay`) — pure C++, no Arduino |
+| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED (big count with the matching brew methods stacked to its right, redrawn only on a click), NVS (`Preferences`, flushed when `SaveDelay` is due and before sleep), deep sleep, boot blink + serial banner |
 | [`../common/grind_chart.h`](firmware/common/grind_chart.h) | brew-method table `GRIND_CHART`, `GRIND_MAX_LINES` (4) and `grind_matches()`, shared with the ESPHome build |
-| [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine and the grind chart (table sanity, match oracle over counts 0…100, the line cap, one shipped-table spot check), runs on the host in `gcc:14` |
+| [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine, the save delay (burst → one write, 1.5 s gaps → none, `millis` wrap, delay 0, flush before sleep) and the grind chart (table sanity, match oracle over counts 0…100, the line cap, one shipped-table spot check), runs on the host in `gcc:14` |
 | [`Dockerfile`](firmware/plain/Dockerfile) | `python:3.12-slim` + platformio 6.2.0 + git, `PLATFORMIO_CORE_DIR=/pio` |
 
 ```bash

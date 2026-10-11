@@ -17,8 +17,7 @@ constexpr uint32_t IDLE_SLEEP_MS = 60000;
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE, /*clock=*/7, /*data=*/6);
 Preferences prefs;
 Tally tally;
-bool dirty = false;
-uint32_t dirty_since = 0;
+SaveDelay save;
 
 // Baselines in the default U8g2 mode: a glyph with no descent fills the rows just above y.
 constexpr int BIG_BASELINE = 30;  // logisoso28 (28 px digits): rows 2..29, the same with or without labels
@@ -49,9 +48,9 @@ static void draw() {
 }
 
 static void flush() {
-  if (!dirty) return;
+  if (!save.dirty) return;
   prefs.putInt("count", tally.count);
-  dirty = false;
+  save.dirty = false;
 }
 
 static void sleepNow() {
@@ -91,11 +90,10 @@ void loop() {
     draw();
     // Deferred: written SAVE_DELAY_MS after the last change so a burst of clicks is one NVS write;
     // sleepNow() flushes first, so deep sleep never loses a pending count.
-    dirty = true;
-    dirty_since = now;
+    save.touch(now);
     Serial.printf("count=%ld\n", (long)tally.count);
   }
-  if (dirty && now - dirty_since >= SAVE_DELAY_MS) flush();
+  if (save.due(now, SAVE_DELAY_MS)) flush();
   if (now - tally.last_activity_ms >= IDLE_SLEEP_MS) sleepNow();
   delay(5);
 }

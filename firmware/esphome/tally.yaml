@@ -2,7 +2,7 @@ substitutions:
   name: tally
   friendly_name: Tally Counter
   idle_sleep: 60s
-  save_delay: 2s  # time between flash writes of the count; a burst of clicks becomes one NVS write
+  save_delay: 2s  # pause after the last click before the count is written to flash (one write per burst)
 
 esphome:
   name: ${name}
@@ -43,14 +43,14 @@ ota:
     encryption:  # reuses the api key
 
 preferences:
-  # the global queues the new value in RAM at once, the syncer writes it to NVS every ${save_delay}; deep sleep's shutdown hook flushes first
-  flash_write_interval: ${save_delay}
+  # no periodic writes; the save_later script writes once per burst, deep sleep's shutdown hook flushes a pending one
+  flash_write_interval: never
 
 globals:
   - id: count
     type: int
     restore_value: true
-    update_interval: 1ms  # queue changes every loop (default 1s); RAM only, no flash cost
+    update_interval: 1ms  # queue changes in RAM every loop (default 1s) so save_later syncs the newest value; no flash cost
     initial_value: "0"
   - id: combo  # true while a both-buttons reset is in progress; suppresses the ±1 on release
     type: bool
@@ -122,6 +122,12 @@ script:
     then:
       - component.update: oled
       - component.update: tally_number
+      - script.execute: save_later
+  - id: save_later
+    mode: restart  # every count change restarts the wait: one NVS write per burst
+    then:
+      - delay: ${save_delay}
+      - lambda: global_preferences->sync();
   - id: idle_timer
     mode: restart
     then:

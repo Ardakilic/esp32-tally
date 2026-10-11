@@ -20,13 +20,14 @@ Makefile                       canonical build: every target is a `docker run`
 firmware/common/grind_chart.h  shared brew table GRIND_CHART + GRIND_MAX_LINES + grind_matches();
                                plain `-I ../common` (build_flags), ESPHome `esphome: includes:`
 firmware/plain/                PlatformIO + Arduino 3.3.12 (pioarduino 55.03.312-1), U8g2 2.36.18
-  src/tally_logic.h            pure C++ state machine (debounce, clamp, both-held reset)
+  src/tally_logic.h            pure C++ state machine (debounce, clamp, both-held
+                               reset) + `struct SaveDelay` (touch/due: one save per burst)
   src/main.cpp                 pins, U8g2 (big digits, brew labels stacked to their right, drawn
-                               on a click only), Preferences/NVS (2 s after last click), deep
-                               sleep, seeded button state, GPIO8 boot blink, serial boot banner
-  test/tally_logic_test.cpp    assert self-test: state machine + grind chart (table sanity, match
-                               oracle 0..100, max 0 / max 1 cap, one shipped-table spot check),
-                               runs in gcc:14 — the committed test
+                               on a click only), Preferences/NVS (SaveDelay, flush in sleepNow()),
+                               deep sleep, seeded button state, GPIO8 boot blink, serial boot banner
+  test/tally_logic_test.cpp    assert self-test: state machine, SaveDelay, grind chart (table
+                               sanity, match oracle 0..100, max 0 / max 1 cap, one shipped-table
+                               spot check), runs in gcc:14 — the committed test
   Dockerfile                   python:3.12-slim + platformio 6.2.0 + git, PLATFORMIO_CORE_DIR=/pio
   build/tally-plain.factory.bin  output (gitignored with .pio/)
 firmware/esphome/tally.yaml    ESPHome 2026.9.1, esp-idf; secrets.yaml (gitignored) from .example
@@ -69,7 +70,7 @@ make case OMIT_ENGRAVING=1      # appends --omit-engraving (plain lid top)
 Expected results: verify `105 checks — ALL PASS` (70 with `--snap-bite 0`, 101 with
 `--omit-engraving`);
 plain RAM 4.6 % / Flash 25.5 %, factory bin 407 KiB (416640 bytes);
-ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1010880 bytes).
+ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
 
 ## Technology decisions (and why)
 
@@ -307,10 +308,16 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   the restored count. GPIO8 (`LED_PIN`, blue LED, active-LOW, 10 k pull-up,
   strapping pin) is driven LOW for the length of `setup()` (≈0.3 s, mostly U8g2's
   2 × 100 ms + 100 ms SSD1306 reset delays) then returned to INPUT — a blink with
-  a dark OLED means MCU alive, display dead. NVS is written once, `SAVE_DELAY_MS`
-  (build flag, 2000) after the last change: a click marks the count dirty, `loop()`
-  flushes it (`putInt` commits itself), `sleepNow()` flushes first. Switching off
-  within 2 s of a click can lose that click.
+  a dark OLED means MCU alive, display dead. One save rule, both
+  firmwares: every click restarts a 2 s timer, gaps under 2 s never write, the pause
+  after the last click writes the final count once (one write per burst); sleep
+  flushes a pending count first; a power cut during a burst or within 2 s of the last
+  click loses the clicks since the previous write. Plain: `struct SaveDelay` in
+  `tally_logic.h` (`touch(now)` on a change, `due(now, delay_ms)`), `SAVE_DELAY_MS`
+  (build flag, 2000, 0 = every click); `main.cpp` flushes when due (`putInt` commits
+  itself) and in `sleepNow()`; `make plain-test` covers burst → one write 2 s after
+  the last click, 60 s of clicks at 1.5 s gaps → none then one, millis wrap, delay 0,
+  flush before sleep.
 - **I2C 400 kHz** on both builds: plain `setBusClock`, ESPHome `i2c: frequency:
   400kHz` (default 50 kHz ≈ 90 ms/frame), so a click's redraw blocks the loop less.
   OLED misbehaving at 400 kHz on esp-idf → try `i2c: timeout: 10ms` first.
@@ -335,10 +342,14 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   `-Isrc -I../common`; the old one-dir `firmware/plain:/work` mount no longer finds
   `grind_chart.h` (likewise the old `/work` / `/config` mounts of `RUN_PLAIN` /
   `RUN_ESPHOME`).
-- ESPHome: `save_delay` substitution (2s) → `preferences: flash_write_interval`; the
-  syncer is a poller, so it writes on a fixed tick, not 2 s after the last click.
-  `update_interval: 1ms` on `count` is RAM-only (restoring globals poll every 1 s by
-  default, then queue in RAM); deep sleep's shutdown hooks save the global, then sync.
+- ESPHome save rule: `save_later` script (`mode: restart`, `delay: ${save_delay}`,
+  `global_preferences->sync()`), run from `refresh` (every count change goes through
+  it: both releases, the both-held reset, the HA number, Reset Tally).
+  `preferences: flash_write_interval: never` so nothing writes mid-burst; the syncer
+  component still exists, so its shutdown hook flushes before `deep_sleep.enter`.
+  `global_preferences->sync()` is an ESPHome internal (pinned 2026.9.1; re-check on
+  upgrade). `update_interval: 1ms` on `count` is RAM-only (restoring globals poll every
+  1 s by default, then queue in RAM).
 - gfonts Roboto is downloaded at ESPHome compile time → the container needs
   internet on a cold cache.
 - **No USB passthrough in Docker Desktop on macOS**: flash via web.esphome.io in
