@@ -1,9 +1,10 @@
 name: Build firmwares and publish release
 
 # Same Docker builds as the Makefile (`make plain`, `make esphome`), on every
-# push to main and every PR. On main the binaries republish the rolling
-# `latest` release, which the landing page (index.html, generated from
-# case/generate.py) links as direct downloads.
+# push to main and every PR. The build job is read-only; only the publish job
+# (on main) can write, and it updates the rolling `latest` release in place —
+# the release is never deleted, so the landing page's direct-download links
+# (index.html, generated from case/generate.py) keep working mid-publish.
 
 on:
   push:
@@ -12,17 +13,21 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # re-create the `latest` release
+  contents: read
 
 concurrency:
-  group: firmware-release  # serialize: two runs must not delete/create the tag at once
+  group: firmware-release  # serialize: two runs must not publish at once
   cancel-in-progress: false
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Build plain firmware (as `make plain` does)
         run: |
@@ -44,17 +49,46 @@ jobs:
           cp firmware/esphome/.esphome/build/tally/build/firmware.factory.bin dist/tally-esphome.factory.bin
           cp firmware/esphome/.esphome/build/tally/build/firmware.ota.bin dist/tally-esphome.ota.bin
 
-      - name: Publish rolling `latest` release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # update the `latest` release only; the build above is read-only
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware-dist
+          path: dist/
+
+      - name: Publish to rolling `latest` release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # A stale queued run must not publish over a newer commit's release.
+          test "$(gh api repos/${{ github.repository }}/commits/main --jq .sha)" = "$GITHUB_SHA"
           cat > /tmp/notes.md <<EOF
           Prebuilt firmwares from \`main\` @ \`${GITHUB_SHA:0:12}\` — flash the \`.factory.bin\` files from a browser at https://web.esphome.io (slide switch OFF first, see README → Flashing).
 
           - \`tally-plain.factory.bin\`: no network, ready to use.
           - \`tally-esphome.factory.bin\` / \`.ota.bin\`: built with placeholder Wi-Fi/API credentials — counts standalone, set Wi-Fi via the captive-portal hotspot; rebuild with your own \`secrets.yaml\` for Home Assistant.
           EOF
-          gh release delete latest --cleanup-tag --yes || true
-          gh release create latest --title "Latest firmware (main)" --notes-file /tmp/notes.md \
-            dist/tally-plain.factory.bin dist/tally-esphome.factory.bin dist/tally-esphome.ota.bin
+          if gh release view latest >/dev/null 2>&1; then
+            # Retain the release and swap the assets in place, then point the
+            # tag at the commit that produced them.
+            gh release upload latest --clobber \
+              dist/tally-plain.factory.bin dist/tally-esphome.factory.bin dist/tally-esphome.ota.bin
+            gh release edit latest --title "Latest firmware (main)" --notes-file /tmp/notes.md
+            gh api repos/${{ github.repository }}/git/refs/tags/latest -X PATCH -f sha="$GITHUB_SHA" -f force=true --jq .ref
+          else
+            gh release create latest --target "$GITHUB_SHA" --title "Latest firmware (main)" --notes-file /tmp/notes.md \
+              dist/tally-plain.factory.bin dist/tally-esphome.factory.bin dist/tally-esphome.ota.bin
+          fi
+          # Verify the published assets before finishing.
+          test "$(gh release view latest --json assets --jq '[.assets[].name] | sort | join(",")')" = "tally-esphome.factory.bin,tally-esphome.ota.bin,tally-plain.factory.bin"

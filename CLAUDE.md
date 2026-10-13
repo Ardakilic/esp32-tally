@@ -44,8 +44,9 @@ case/vendor/                   three.module.min.js + three.core.min.js + THREE_V
 case/stl/, case/docs/          COMMITTED outputs — regenerate, never edit
 case/preview.html, index.html  COMMITTED outputs too (preview + Pages landing page) — never edit
 .github/workflows/pages.yml    publishes the whole checkout to GitHub Pages on push to main
-.github/workflows/firmware.yml builds both firmwares in Docker on push to main + PRs;
-                                on main it republishes the rolling `latest` release
+.github/workflows/firmware.yml builds both firmwares in Docker on push to main + PRs
+                                (read-only build job); on main a separate publish job
+                                updates the rolling `latest` release in place
                                 (tally-plain.factory.bin, tally-esphome.factory.bin, .ota.bin),
                                 linked as direct downloads from index.html (generated from
                                 REPO_URL in generate.py)
