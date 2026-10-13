@@ -44,6 +44,11 @@ case/vendor/                   three.module.min.js + three.core.min.js + THREE_V
 case/stl/, case/docs/          COMMITTED outputs — regenerate, never edit
 case/preview.html, index.html  COMMITTED outputs too (preview + Pages landing page) — never edit
 .github/workflows/pages.yml    publishes the whole checkout to GitHub Pages on push to main
+.github/workflows/firmware.yml builds both firmwares in Docker on push to main + PRs;
+                                on main it republishes the rolling `latest` release
+                                (tally-plain.factory.bin, tally-esphome.factory.bin, .ota.bin),
+                                linked as direct downloads from index.html (generated from
+                                REPO_URL in generate.py)
 case/requirements*.txt         pinned (==) — a floating stack re-triangulates every STL
 ```
 
@@ -356,7 +361,10 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   Chrome/Edge with the `.factory.bin`; switch OFF first (5V = VBUS). Hold BOOT
   (GPIO9) while plugging in if the port is missing.
 - `make esphome` depends on `firmware/esphome/secrets.yaml` as a file target whose
-  recipe prints the fix and exits 1.
+  recipe prints the fix and exits 1. CI has no real secrets: firmware.yml builds
+  ESPHome from the `.example` with a throwaway generated `api_key`, so the released
+  ESPHome binary ships placeholder Wi-Fi/API credentials (counts standalone, Wi-Fi
+  via captive portal; rebuild with real secrets for HA) — README → Flashing says so.
 - Single-sided perfboard: the solder side faces the battery; insulation is part of
   the build, not optional (README → Assembly steps 5–6).
 

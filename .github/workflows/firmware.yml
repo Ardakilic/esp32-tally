@@ -1,0 +1,60 @@
+name: Build firmwares and publish release
+
+# Same Docker builds as the Makefile (`make plain`, `make esphome`), on every
+# push to main and every PR. On main the binaries republish the rolling
+# `latest` release, which the landing page (index.html, generated from
+# case/generate.py) links as direct downloads.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # re-create the `latest` release
+
+concurrency:
+  group: firmware-release  # serialize: two runs must not delete/create the tag at once
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build plain firmware (as `make plain` does)
+        run: |
+          docker build -t esp32-tally-plain firmware/plain
+          docker run --rm -v "$PWD":/app -w /app/firmware/plain esp32-tally-plain pio run
+          mkdir -p dist
+          cp firmware/plain/.pio/build/supermini/firmware.factory.bin dist/tally-plain.factory.bin
+
+      - name: Compile ESPHome firmware (as `make esphome` does)
+        run: |
+          # CI has no real secrets: build with the example file, patched with a
+          # throwaway API key (the validator rejects the all-zeros placeholder).
+          # The released ESPHome binary therefore ships placeholder Wi-Fi/API
+          # credentials — it counts standalone, Wi-Fi is set via the captive
+          # portal; rebuild with your own secrets.yaml for Home Assistant.
+          cp firmware/esphome/secrets.yaml.example firmware/esphome/secrets.yaml
+          python3 -c "import re, secrets, base64; p = 'firmware/esphome/secrets.yaml'; s = open(p).read(); s = re.sub(r'^api_key:.*', 'api_key: \"%s\"' % base64.b64encode(secrets.token_bytes(32)).decode(), s, flags=re.M); open(p, 'w').write(s)"
+          docker run --rm -v "$PWD":/app -w /app/firmware/esphome ghcr.io/esphome/esphome:2026.9.1 compile tally.yaml
+          cp firmware/esphome/.esphome/build/tally/build/firmware.factory.bin dist/tally-esphome.factory.bin
+          cp firmware/esphome/.esphome/build/tally/build/firmware.ota.bin dist/tally-esphome.ota.bin
+
+      - name: Publish rolling `latest` release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > /tmp/notes.md <<EOF
+          Prebuilt firmwares from \`main\` @ \`${GITHUB_SHA:0:12}\` — flash the \`.factory.bin\` files from a browser at https://web.esphome.io (slide switch OFF first, see README → Flashing).
+
+          - \`tally-plain.factory.bin\`: no network, ready to use.
+          - \`tally-esphome.factory.bin\` / \`.ota.bin\`: built with placeholder Wi-Fi/API credentials — counts standalone, set Wi-Fi via the captive-portal hotspot; rebuild with your own \`secrets.yaml\` for Home Assistant.
+          EOF
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest --title "Latest firmware (main)" --notes-file /tmp/notes.md \
+            dist/tally-plain.factory.bin dist/tally-esphome.factory.bin dist/tally-esphome.ota.bin
