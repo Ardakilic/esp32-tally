@@ -246,6 +246,11 @@ the shipped rows in
 
 ### Flashing
 
+No build needed: grab the prebuilt `.factory.bin` files from the
+[latest release](https://github.com/Ardakilic/esp32-tally/releases/latest)
+(rebuilt on every push to `main`; the [landing page](https://ardakilic.github.io/esp32-tally/)
+links them directly).
+
 Docker Desktop on macOS cannot pass USB through, so flash from the browser:
 
 1. **Slide switch OFF** (or battery disconnected) — see [Power notes](#power-notes).
@@ -257,7 +262,10 @@ Docker Desktop on macOS cannot pass USB through, so flash from the browser:
 
 Both images are full factory images, so switching between the two firmwares is just
 another flash. After the first ESPHome flash, later updates go over the air
-(`make esphome-ota`).
+(`make esphome-ota`). Note: the release ESPHome binary is built with placeholder
+Wi-Fi/API credentials (CI has no real secrets) — it counts standalone and you can
+set Wi-Fi via its captive-portal hotspot, but for Home Assistant rebuild it with
+your own `secrets.yaml`.
 
 ## Case
 
