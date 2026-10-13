@@ -1,7 +1,7 @@
 substitutions:
   name: tally
   friendly_name: Tally Counter
-  idle_sleep: 60s
+  idle_sleep: 30s
   save_delay: 2s  # pause after the last click before the count is written to flash (one write per burst)
 
 esphome:

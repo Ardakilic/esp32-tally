@@ -746,7 +746,7 @@ def build_index():
          alt="Wiring block schematic: power path and signals"></a>
     <h2>Firmware</h2>
     <p class="geo">Same behaviour in both: click counts on release, hold both to
-       reset, 60 s idle → deep sleep, count kept in flash</p>
+       reset, 30 s idle → deep sleep, count kept in flash</p>
     <ul class="links">
       <li><a href="{REPO_URL}/tree/main/firmware/plain">firmware/plain/</a> — PlatformIO + Arduino, no radio</li>
       <li><a href="{REPO_URL}/tree/main/firmware/esphome">firmware/esphome/</a> — ESPHome, Home Assistant entities</li>

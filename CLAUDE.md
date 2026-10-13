@@ -149,7 +149,7 @@ ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
   3.41 from the X edges), single-sided.
 - **Behaviour contract** (both firmwares, tested in `tally_logic_test.cpp`): click
   counts on release, 20 ms debounce, 0…99999, both held ≥ 1 s → 0 and the two
-  releases are swallowed, 60 s idle → OLED off + deep sleep, the wake press is not
+  releases are swallowed, 30 s idle → OLED off + deep sleep, the wake press is not
   counted.
 - **OLED rows** (128 × 32; the count sits at the same rows with or without labels, the
   labels are stacked to its right, block centred vertically). Plain (explicit baselines,

@@ -9,7 +9,7 @@ constexpr int BTN_UP = 3, BTN_DOWN = 4;
 // Super Mini blue LED: active-LOW with a 10k pull-up, and a strapping pin (must be high at reset).
 // Lit only while setup() runs, so a blink on every boot/wake proves the MCU is alive with a dark OLED.
 constexpr int LED_PIN = 8;
-constexpr uint32_t IDLE_SLEEP_MS = 60000;
+constexpr uint32_t IDLE_SLEEP_MS = 30000;
 #ifndef SAVE_DELAY_MS
 #define SAVE_DELAY_MS 2000  // see platformio.ini build_flags
 #endif
