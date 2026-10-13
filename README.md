@@ -3,7 +3,7 @@
 A pocket tally counter: two buttons, a 0.91" OLED, an ESP32-C3 Super Mini and a
 1000 mAh LiPo in a 58 × 58 × 22 mm 3D-printed case. Right button counts up, left
 counts down, hold both for a second to reset. The count survives power-off, the
-device deep-sleeps after 60 s and wakes on any button, and a slide switch cuts
+device deep-sleeps after 30 s and wakes on any button, and a slide switch cuts
 power completely. Two firmwares share the same hardware: a **plain** one with no
 radio, and an **ESPHome** one that exposes the count to Home Assistant. Everything
 — the case STLs, the README images, both firmware binaries — is generated from
@@ -37,7 +37,7 @@ as ghosts.*
   `firmware/plain/platformio.ini` `build_flags` (0 = every click). ESPHome: the
   `save_delay` substitution, used by the restart-mode `save_later` script, with
   `flash_write_interval: never`.
-- **60 s idle → OLED off + deep sleep**; either button wakes it (that press is not
+- **30 s idle → OLED off + deep sleep**; either button wakes it (that press is not
   counted). Slide switch = hard power off.
 - **Charging over USB-C** through a TP4056 module with cell protection; the ESP32's
   own USB-C is for flashing only and sits behind the lid (see [Power notes](#power-notes)).
@@ -181,7 +181,7 @@ low at sleep time is left out of the wake mask.
 
 [`firmware/esphome/tally.yaml`](firmware/esphome/tally.yaml) — ESPHome 2026.9.1,
 `esp-idf` framework, board `nologo_esp32c3_super_mini`. Substitution
-`idle_sleep: 60s`. Entities in HA: number **Tally Count** (0…99999, box mode,
+`idle_sleep: 30s`. Entities in HA: number **Tally Count** (0…99999, box mode,
 settable), button **Reset Tally**, switch **Keep Awake**.
 
 1. Secrets: `cp firmware/esphome/secrets.yaml.example firmware/esphome/secrets.yaml`
@@ -198,9 +198,9 @@ make esphome          # -> firmware/esphome/.esphome/build/tally/build/firmware.
 make esphome-ota      # compile + OTA to DEVICE (default tally.local) after the first USB flash
 ```
 
-Result: Flash 51.5 %, RAM 33.1 %. The device **still sleeps after 60 s** with Wi-Fi: HA
+Result: Flash 51.5 %, RAM 33.1 %. The device **still sleeps after 30 s** with Wi-Fi: HA
 shows it unavailable in between, it reconnects on every wake and pushes the count.
-Before an OTA, press a button to wake it and turn on **Keep Awake** within 60 s;
+Before an OTA, press a button to wake it and turn on **Keep Awake** within 30 s;
 turning it off re-arms the idle timer.
 
 ### Brew-method labels (grind chart)
@@ -343,7 +343,7 @@ the OLED's free end before closing.
 First build, 2026-10-10: with the TP4056 and cell hot-glued under the board the
 OLED stayed dark until the glue came off — contact through the header stubs and
 joint stress, not EMI; hence steps 5–6. Dark-display triage, in order: press
-**RST**; the serial port appears (`ls /dev/cu.usbmodem*`) and vanishes after 60 s
+**RST**; the serial port appears (`ls /dev/cu.usbmodem*`) and vanishes after 30 s
 (deep sleep); [web.esphome.io](https://web.esphome.io) → **Logs** shows `count=N`
 per click; the blue GPIO8 blink on boot = MCU alive; then meter the OLED header
 (VCC 3.3 V, SDA/SCL idle at 3.3 V) and reflow. A deep-sleeping ESP32-C3 does
