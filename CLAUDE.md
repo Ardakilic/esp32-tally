@@ -432,5 +432,6 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   the ESP's USB-C revived it (at the plug, not at lid-off), count kept; Arda checked
   soldering and insulation afterwards: fine. Leading diagnosis: ESP unpowered with a full
   cell — DW01 short/over-current latch (released by the back-fed 5 V via the 8205A
-  body diode) or an intermittent power-path joint; not the firmware. README → Field
+  body diode) or an intermittent power-path joint — a hypothesis (OUT not measured); firmware
+  not ruled out until the meter triage or the new boot log says so. README → Field
   notes has the meter triage (B+/B−, OUT+/OUT−, ESP 5V/3V3, then RST, then OFF→ON).

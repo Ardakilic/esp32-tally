@@ -424,16 +424,20 @@ firmware (U8g2's centre mode on a font with a deep descent), not the panel — f
 `B+`/`B−`), the counter went into its 30 s idle sleep and stayed dark — neither
 button woke it, no blue blink. With the switch ON, a 5 V USB-C charger in the
 ESP32's own port revived it (at the plug, not when the lid came off), count kept;
-soldering and solder-side insulation checked fine afterwards. A dataless 5 V plug can't wake or reset a
-powered C3 (VBUS only reaches the BAT60J → ME6211; EN is an RC + the RST key), so
-the ESP32 was most likely **unpowered with a full cell**: the DW01's
+soldering and solder-side insulation checked fine afterwards. The cause is **not
+yet established**. Leading hypothesis: a dataless 5 V plug shouldn't wake or reset
+a powered C3 (VBUS only reaches the BAT60J → ME6211; EN is an RC + the RST key), so
+the ESP32 may have been **unpowered with a full cell** — the DW01's
 over-current/short latch, which holds while the load stays connected and is
-released by anything that looks like a charger — the back-fed 5 V through the
-8205A body diode is one — or an intermittent joint in the power path. Not the
-firmware: a panic reboots and blinks, every I2C wait is bounded, and the OLED
-commands at sleep are harmless. The plain firmware now adds a loop watchdog, a
-timer wake beside the button wake, and RTC breadcrumbs + an NVS boot log that tell
-a power loss (`rtc=cold`, `last=power lost`) from a hang ([Plain](#plain-no-network)).
+released by anything that looks like a charger (the back-fed 5 V through the 8205A
+body diode is one), or an intermittent joint in the power path. `OUT+`/`OUT−` were
+not measured, so this is inferred, not shown. Firmware is not ruled out either: a
+panic reboots and blinks and every I2C wait is bounded, but the firmware of that day
+had no loop watchdog and could sleep with no wake source armed (both buttons low at
+sleep time). The plain firmware now adds a loop watchdog, a timer wake beside the
+button wake, and RTC breadcrumbs + an NVS boot log that tell a power loss
+(`rtc=cold`, `last=power lost`) from a hang ([Plain](#plain-no-network)); until the
+meter readings below or that log separate them, treat both as open.
 Next time, **before plugging anything in**, meter `B+`/`B−`, then `OUT+`/`OUT−`,
 then the ESP32's `5V` and `3V3` pins; then press RST; then switch OFF → ON:
 
