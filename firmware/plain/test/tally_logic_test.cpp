@@ -168,6 +168,40 @@ int main() {
     assert(!d.due(100 + SAVE_MS - 1, SAVE_MS) && d.dirty);
   }
 
+  // WakePlan: both up = both GPIO-armed + the hourly safety timer
+  {
+    WakePlan w;
+    assert(w.plan(3) == WakePlan::SAFETY_S && w.armed == 3 && w.retry_s == 0);
+    // one down: only the other is armed, the timer backs off 2, 4, ... 512, then caps at 600
+    uint32_t want = 2;
+    for (int i = 0; i < 9; ++i, want *= 2) assert(w.plan(1) == want && w.armed == 1);
+    assert(want == 1024);
+    assert(w.plan(1) == WakePlan::RETRY_MAX_S && w.plan(2) == WakePlan::RETRY_MAX_S && w.armed == 2);
+    // released: back to the hourly timer, backoff restarts from the minimum
+    assert(w.plan(3) == WakePlan::SAFETY_S && w.retry_s == 0);
+    // both down: nothing GPIO-armed, but never a sleep without a timer
+    assert(w.plan(0) == WakePlan::RETRY_MIN_S && w.armed == 0);
+    assert(w.plan(0) == 4);
+    // is_press: an armed button down is a press; an unarmed (stuck) one is not
+    w.plan(1);
+    assert(w.is_press(1) && w.is_press(3));
+    assert(!w.is_press(2) && !w.is_press(0));
+    w.plan(0);
+    assert(!w.is_press(1) && !w.is_press(2) && !w.is_press(3));
+  }
+  // BootLog: keeps the last 8 in order, oldest first
+  {
+    BootLog<8> l;
+    assert(l.size() == 0);
+    for (int i = 1; i <= 3; ++i) l.push({(uint8_t)i, 1, (uint16_t)(i * 10)});
+    assert(l.size() == 3 && l.total == 3);
+    for (int i = 0; i < 3; ++i) assert(l.at(i).reason == i + 1 && l.at(i).sleeps == (i + 1) * 10);
+    for (int i = 4; i <= 10; ++i) l.push({(uint8_t)i, 2, 0});
+    assert(l.size() == 8 && l.total == 10);
+    assert(l.at(0).reason == 3 && l.at(0).stage == 1 && l.at(7).reason == 10);
+    for (int i = 0; i < 8; ++i) assert(l.at(i).reason == i + 3);
+  }
+
   puts("OK");
   return 0;
 }
