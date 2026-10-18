@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include "grind_chart.h"
+#include "sleep_logic.h"
 #include "tally_logic.h"
 
 static Tally t;
@@ -167,6 +168,25 @@ int main() {
     d.touch(100);
     assert(!d.due(100 + SAVE_MS - 1, SAVE_MS) && d.dirty);
   }
+
+  // sleep wake mask: HIGH = released = wakes on LOW press, LOW = held/stuck = excluded
+  assert(SLEEP_BTN_UP == 3 && SLEEP_BTN_DOWN == 4);
+  assert(SLEEP_WAKE_MASK_ALL == 0x18);
+  assert(buildWakeMask(true, true) == 0x18);
+  assert(!needsTimerFallback(buildWakeMask(true, true)));
+  assert(!shouldArmTimer(buildWakeMask(true, true)));
+  assert(buildWakeMask(true, false) == (1ULL << 3));
+  assert(!needsTimerFallback(buildWakeMask(true, false)));
+  assert(buildWakeMask(false, true) == (1ULL << 4));
+  assert(!needsTimerFallback(buildWakeMask(false, true)));
+  assert(!shouldArmTimer(buildWakeMask(false, true)));
+  assert(buildWakeMask(false, false) == 0);
+  assert(needsTimerFallback(buildWakeMask(false, false)));
+  assert(shouldArmTimer(buildWakeMask(false, false)));
+  assert(needsTimerFallback(0) && shouldArmTimer(0));
+  assert(!needsTimerFallback(0x18) && !shouldArmTimer(0x18));
+  // timer failsafe is sane: 60-120 s (longer than the 30 s idle sleep, short enough to recover)
+  assert(TIMER_FALLBACK_US >= 60ULL * 1000000ULL && TIMER_FALLBACK_US <= 120ULL * 1000000ULL);
 
   puts("OK");
   return 0;

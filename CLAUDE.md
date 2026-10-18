@@ -22,10 +22,13 @@ firmware/common/grind_chart.h  shared brew table GRIND_CHART + GRIND_MAX_LINES +
 firmware/plain/                PlatformIO + Arduino 3.3.12 (pioarduino 55.03.312-1), U8g2 2.36.18
   src/tally_logic.h            pure C++ state machine (debounce, clamp, both-held
                                reset) + `struct SaveDelay` (touch/due: one save per burst)
+  src/sleep_logic.h            pure C++ wake mask + 90 s timer failsafe (buildWakeMask,
+                               needsTimerFallback/shouldArmTimer, TIMER_FALLBACK_US)
   src/main.cpp                 pins, U8g2 (big digits, brew labels stacked to their right, drawn
                                on a click only), Preferences/NVS (SaveDelay, flush in sleepNow()),
                                deep sleep, seeded button state, GPIO8 boot blink, serial boot banner
-  test/tally_logic_test.cpp    assert self-test: state machine, SaveDelay, grind chart (table
+  test/tally_logic_test.cpp    assert self-test: state machine, SaveDelay, sleep wake
+                               mask + timer failsafe, grind chart (table
                                sanity, match oracle 0..100, max 0 / max 1 cap, one shipped-table
                                spot check), runs in gcc:14 — the committed test
   Dockerfile                   python:3.12-slim + platformio 6.2.0 + git, PLATFORMIO_CORE_DIR=/pio
@@ -156,7 +159,12 @@ ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
 - **Behaviour contract** (both firmwares, tested in `tally_logic_test.cpp`): click
   counts on release, 20 ms debounce, 0…99999, both held ≥ 1 s → 0 and the two
   releases are swallowed, 30 s idle → OLED off + deep sleep, the wake press is not
-  counted.
+  counted. Plain only: both buttons stuck LOW at sleep (mask==0) arms a 90 s timer
+  wakeup (`TIMER_FALLBACK_US` in `sleep_logic.h`) instead, so no GPIO can brick it
+  in sleep; wake is armed before the OLED is switched off and re-armed after
+  (latest pins win), the OLED power-off runs only when `displayOn`, and
+  `Wire.setTimeOut(20)` (default 50 ms) bounds each I2C transaction so a dead
+  display cannot stall sleep entry.
 - **OLED rows** (128 × 32; the count sits at the same rows with or without labels, the
   labels are stacked to its right, block centred vertically). Plain (explicit baselines,
   default U8g2 font position): `logisoso28_tn` baseline 30 → digits rows 2..29;
@@ -305,7 +313,12 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   held, so the wake press's release is swallowed and a stuck-LOW button cannot
   block boot; `sleepNow()` leaves a LOW pin out of the GPIO wake mask (it would
   re-wake instantly; IDF pulls up the wake pins itself,
-  `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`). ESPHome `combo` global
+  `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`); both LOW (mask==0) arms
+  `TIMER_FALLBACK_US` (90 s) instead, so a stuck pair can't brick the device in
+  sleep. `sleepNow()` calls `armWake()` before touching the display/NVS and again
+  after (latest pins win), the OLED power-off runs only when `displayOn`, and
+  `Wire.setTimeOut(20)` (default 50 ms) bounds each I2C transaction so a dead
+  display can't stall sleep entry. ESPHome `combo` global
   swallows the releases after a both-held reset; it is cleared when the *other*
   button is already up.
 - `wifi`/`api` `reboot_timeout: 0s`: never reboot for lack of network.

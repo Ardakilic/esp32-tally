@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <U8g2lib.h>
+#include <Wire.h>
 #include <esp_sleep.h>
 #include "grind_chart.h"
+#include "sleep_logic.h"
 #include "tally_logic.h"
 
 constexpr int BTN_UP = 3, BTN_DOWN = 4;
@@ -53,11 +55,28 @@ static void flush() {
   save.dirty = false;
 }
 
+static bool displayOn = false;
+
+static void armWake() {
+  bool upHigh = digitalRead(BTN_UP);
+  bool downHigh = digitalRead(BTN_DOWN);
+  static_assert(SLEEP_BTN_UP == BTN_UP && SLEEP_BTN_DOWN == BTN_DOWN, "sleep_logic pins must match wiring");
+  uint64_t mask = buildWakeMask(upHigh, downHigh);
+  if (mask) {
+    esp_deep_sleep_enable_gpio_wakeup(mask, ESP_GPIO_WAKEUP_GPIO_LOW);  // a held/stuck pin would re-wake instantly
+  } else {
+    esp_sleep_enable_timer_wakeup(TIMER_FALLBACK_US);  // mask==0, both stuck LOW: timer failsafe, see sleep_logic.h
+  }
+}
+
 static void sleepNow() {
+  armWake();  // arm first so a hung display/NVS below cannot block sleep
+  if (displayOn) {
+    (void)u8g2.setPowerSave(1);  // best effort (bounded by Wire.setTimeOut): sleep proceeds even on I2C NACK
+    displayOn = false;
+  }
   flush();
-  u8g2.setPowerSave(1);
-  uint64_t mask = (digitalRead(BTN_UP) ? BIT(BTN_UP) : 0) | (digitalRead(BTN_DOWN) ? BIT(BTN_DOWN) : 0);
-  if (mask) esp_deep_sleep_enable_gpio_wakeup(mask, ESP_GPIO_WAKEUP_GPIO_LOW);  // a held/stuck pin would re-wake instantly
+  armWake();  // re-read pins: latest state wins, timer fallback if both now stuck
   esp_deep_sleep_start();
 }
 
@@ -73,8 +92,10 @@ void setup() {
   tally.count = prefs.getInt("count", 0);
   Serial.printf("count=%ld (restored)\n", (long)tally.count);
   u8g2.setBusClock(400000);  // a full frame takes ~50 ms at the 100 kHz default and would starve button polling
+  Wire.setTimeOut(20);  // bound each I2C txn so a dead display cannot stall sleep entry (default 50 ms)
   u8g2.begin();
   draw();
+  displayOn = true;
   digitalWrite(LED_PIN, HIGH);
   pinMode(LED_PIN, INPUT);  // the pull-up keeps it off through deep sleep at zero drive
   // Seed instead of waiting for release: a stuck-LOW button must not block boot and drain the cell.
@@ -88,6 +109,7 @@ void loop() {
   uint32_t now = millis();
   if (tally.update(!digitalRead(BTN_UP), !digitalRead(BTN_DOWN), now)) {
     draw();
+    displayOn = true;
     // Deferred: written SAVE_DELAY_MS after the last change so a burst of clicks is one NVS write;
     // sleepNow() flushes first, so deep sleep never loses a pending count.
     save.touch(now);

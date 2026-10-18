@@ -38,7 +38,8 @@ as ghosts.*
   `save_delay` substitution, used by the restart-mode `save_later` script, with
   `flash_write_interval: never`.
 - **30 s idle → OLED off + deep sleep**; either button wakes it (that press is not
-  counted). Slide switch = hard power off.
+  counted). Both buttons stuck low → a 90 s timer wakeup instead, so the device
+  can't brick itself in sleep. Slide switch = hard power off.
 - **Charging over USB-C** through a TP4056 module with cell protection; the ESP32's
   own USB-C is for flashing only and sits behind the lid (see [Power notes](#power-notes)).
 - ESPHome variant adds Home Assistant entities: number **Tally Count** (settable),
@@ -153,9 +154,10 @@ are gitignored — `make` regenerates them from pinned Docker images.
 |---|---|
 | [`platformio.ini`](firmware/plain/platformio.ini) | platform / board / U8g2 pins, `build_flags` (`SAVE_DELAY_MS`, `-I ../common`) |
 | [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine and the save-delay rule (`struct SaveDelay`) — pure C++, no Arduino |
+| [`src/sleep_logic.h`](firmware/plain/src/sleep_logic.h) | the deep-sleep wake mask + 90 s timer failsafe (`buildWakeMask`, `needsTimerFallback`, `TIMER_FALLBACK_US`) — pure C++, no Arduino |
 | [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED (big count with the matching brew methods stacked to its right, redrawn only on a click), NVS (`Preferences`, flushed when `SaveDelay` is due and before sleep), deep sleep, boot blink + serial banner |
 | [`../common/grind_chart.h`](firmware/common/grind_chart.h) | brew-method table `GRIND_CHART`, `GRIND_MAX_LINES` (4) and `grind_matches()`, shared with the ESPHome build |
-| [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine, the save delay (burst → one write, 1.5 s gaps → none, `millis` wrap, delay 0, flush before sleep) and the grind chart (table sanity, match oracle over counts 0…100, the line cap, one shipped-table spot check), runs on the host in `gcc:14` |
+| [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine, the save delay (burst → one write, 1.5 s gaps → none, `millis` wrap, delay 0, flush before sleep), the sleep wake mask + 90 s timer failsafe (mask per pin state, timer exactly when mask == 0, 60–120 s sanity) and the grind chart (table sanity, match oracle over counts 0…100, the line cap, one shipped-table spot check), runs on the host in `gcc:14` |
 | [`Dockerfile`](firmware/plain/Dockerfile) | `python:3.12-slim` + platformio 6.2.0 + git, `PLATFORMIO_CORE_DIR=/pio` |
 
 ```bash
@@ -175,7 +177,11 @@ wiring) is the problem. The USB serial port (115200) prints
 count at boot, then `count=N` per click. A button stuck low (solder bridge, jammed
 cap) cannot hold the chip awake: `setup()` seeds the button state instead of
 waiting for a release (so the wake press still doesn't count), and a pin that is
-low at sleep time is left out of the wake mask.
+low at sleep time is left out of the wake mask (it would re-wake instantly). Both
+low arms the 90 s timer failsafe instead. `sleepNow()` arms wake first and re-arms
+after switching the OLED off, so a hung display or NVS write cannot block sleep;
+`Wire.setTimeOut(20)` (default 50 ms) bounds each I2C transaction so a dead display
+cannot stall sleep entry, and the OLED power-off runs only when it is on.
 
 ### ESPHome (Home Assistant)
 
