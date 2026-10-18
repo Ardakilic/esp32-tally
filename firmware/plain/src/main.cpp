@@ -21,15 +21,16 @@ SaveDelay save;
 // .rtc.data: kept through deep sleep, reloaded (zeroed) by the bootloader on every other reset
 RTC_DATA_ATTR WakePlan wake;
 
-// RTC memory survives deep sleep and every reset except power loss, so a bad magic at boot =
-// the board was unpowered (switch off, a tripped/latched cell protection, a broken joint).
+// RTC memory survives deep sleep and software/panic/WDT/brownout resets; it is lost on a power
+// cut and (most likely) on the RST key, which powers the C3 down. So a bad magic at boot = power
+// was cut (switch off, a tripped/latched cell protection, a broken joint) or RST was pressed.
 struct Trace { uint32_t magic, sleeps, timer_wakes; uint8_t stage; };  // no initializers: never touched at startup
 RTC_NOINIT_ATTR Trace trace;
 constexpr uint32_t TRACE_MAGIC = 0x7A11C0DE;
 // Where the firmware last was; read back at the next boot as `last`.
 enum Stage : uint8_t { ST_LOST, ST_BOOT, ST_AWAKE, ST_FLUSH, ST_OLED_OFF, ST_SLEEP };
 static bool warm;    // RTC trace intact at this boot
-static uint8_t last;  // stage the previous run stopped in (ST_LOST = power was cut)
+static uint8_t last;  // stage the previous run stopped in (ST_LOST = power cut or RST key)
 BootLog<8> bootlog;  // NVS "bootlog": one record per boot that was not a deep-sleep wake
 
 // Baselines in the default U8g2 mode: a glyph with no descent fills the rows just above y.
@@ -93,7 +94,7 @@ static const char *resetName(int r) {
 }
 
 static const char *stageName(int s) {
-  static const char *const names[] = {"power lost", "boot", "awake", "flush", "oled-off", "sleep"};
+  static const char *const names[] = {"rtc lost", "boot", "awake", "flush", "oled-off", "sleep"};
   return s >= 0 && s < (int)(sizeof names / sizeof *names) ? names[s] : "?";
 }
 

@@ -74,7 +74,7 @@ struct WakePlan {
   bool is_press(uint8_t down) const { return armed & down; }
 };
 
-// The last N boots that were not a deep-sleep wake; stage 0 = RTC memory lost (power cut).
+// The last N boots that were not a deep-sleep wake; stage 0 = RTC memory lost (power cut or RST key).
 // Stored as one NVS blob, so it stays a plain fixed-size struct.
 template <int N> struct BootLog {
   struct Rec { uint8_t reason, stage; uint16_t sleeps; };

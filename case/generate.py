@@ -714,7 +714,7 @@ def build_index():
   <div class="top">
     <h1><span>ESP32 Tally Counter</span> — pocket tally counter</h1>
     <p class="tagline">Two buttons, a 0.91" OLED, an ESP32-C3 Super Mini and a
-      1000 mAh LiPo in a {OUT_W:.0f} × {OUT_L:.0f} × {Z_TOP + LID_T:.0f} mm 3D-printed case.
+      850 mAh LiPo in a {OUT_W:.0f} × {OUT_L:.0f} × {Z_TOP + LID_T:.0f} mm 3D-printed case.
       Plain and ESPHome firmwares. Open source, generated from one script.</p>
     <p><a href="{REPO_URL}">Source, build guide &amp; README on GitHub</a></p>
   </div>

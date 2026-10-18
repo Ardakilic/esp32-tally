@@ -1,7 +1,7 @@
 # ESP32 Tally Counter
 
 A pocket tally counter: two buttons, a 0.91" OLED, an ESP32-C3 Super Mini and a
-1000 mAh LiPo in a 58 × 58 × 22 mm 3D-printed case. Right button counts up, left
+850 mAh LiPo in a 58 × 58 × 22 mm 3D-printed case. Right button counts up, left
 counts down, hold both for a second to reset. The count survives power-off, the
 device deep-sleeps after 30 s and wakes on any button, and a slide switch cuts
 power completely. Two firmwares share the same hardware: a **plain** one with no
@@ -58,7 +58,7 @@ as ghosts.*
 | 2 × 6 × 6 mm tact switches | any height 4.3–6 mm; default 4.3, see [`--tact-height`](#fit-tuning) |
 | TP4056 USB-C charger module | the common 17 × 28 mm board **with** DW01 protection (the variant with OUT+/OUT− pads); 1 A default |
 | SS12D00 slide switch | 3-pin, 1P2T, 8.8 × 3.9 × 3.5 mm body, 2 mm travel |
-| 1S LiPo pouch, 503450 | 34 × 50 × 5 mm, 1000 mAh, with PCM and JST-PH lead; other sizes via [`--battery`](#fit-tuning) (T ≤ 7 mm) |
+| 1S LiPo pouch, 503450 | 34 × 50 × 5 mm, 850 mAh, with PCM and JST-PH lead; other sizes via [`--battery`](#fit-tuning) (T ≤ 7 mm) |
 | [Özdisan 5 × 5 cm perfboard](https://www.ozdisan.com/p/prototipleme-devreleri-621/ozd-arduino-delkl-pertnaks-5x5-643014) | single-sided, 50 × 50 mm, **18 × 19 holes** at 2.54 mm, used **whole** — no cutting |
 | Male pin headers | 2 × 8 for the Super Mini |
 | Hook-up wire | thin silicone wire for the dozen connections below |
@@ -133,8 +133,9 @@ Verified from the Super Mini schematic (links in
   schematic), so the cell keeps it lit through deep sleep; its current is unmeasured
   but dwarfs the chip's. Flip the switch when storing the counter, or desolder that
   LED for µA-level sleep.
-- **Charge current** is the TP4056 default **1 A** (R<sub>PROG</sub> 1.2 kΩ): fine
-  for cells ≥ 1000 mAh. For smaller cells swap R<sub>PROG</sub> (2 kΩ ≈ 580 mA).
+- **Charge current** is the TP4056 default **1 A** (R<sub>PROG</sub> 1.2 kΩ): ≈1.2 C
+  for the 850 mAh cell, above the usual ≤ 1 C. Swapping R<sub>PROG</sub> for 2 kΩ
+  (≈ 580 mA, ≈0.7 C) is the gentler option.
 - **Charge with the switch OFF** so the TP4056's full-charge indication isn't
   confused by the load.
 - **Charging/USB test with the switch ON** back-feeds the cell through `OUT+` =
@@ -183,10 +184,10 @@ loop watchdog after 5 s: panic, reboot, blink — never a dark, dead counter.
 Serial report (USB serial, 115200). At boot it prints, for example,
 
 ```
-boot reset=1 (power-on) wake=0 rtc=cold last=power lost sleeps=0 timer_wakes=0
-log 7/9: reset=1 (power-on) last=power lost sleeps=0
+boot reset=1 (power-on) wake=0 rtc=cold last=rtc lost sleeps=0 timer_wakes=0
+log 7/9: reset=1 (power-on) last=rtc lost sleeps=0
 log 8/9: reset=6 (task-wdt) last=awake sleeps=41
-log 9/9: reset=1 (power-on) last=power lost sleeps=0
+log 9/9: reset=1 (power-on) last=rtc lost sleeps=0
 count=123 (restored)
 ```
 
@@ -194,9 +195,9 @@ then `count=N` per click; **any key sent** prints the `boot` and `log` lines aga
 (the boot copy waits in a 1 KiB buffer, but is easily missed). `boot` is this run:
 the reset and wake codes, `rtc=warm|cold`, the stage the previous run stopped in
 (`boot`, `awake`, `flush`, `oled-off`, `sleep`) and the deep sleeps / silent timer
-wakes since the last power loss. The `log` lines are the last 8 boots that were
-*not* a deep-sleep wake, kept in NVS (`<k>/<total>`, oldest first) — one flash write
-per such boot, none per wake.
+wakes since the RTC memory was last lost. The `log` lines are the last 8 boots that
+were *not* a deep-sleep wake, kept in NVS (`<k>/<total>`, oldest first) — one flash
+write per such boot, none per wake.
 
 | `reset` | Meaning |
 |---|---|
@@ -209,10 +210,14 @@ per such boot, none per wake.
 | 9 brownout | 3V3 fell below ≈2.5 V |
 | 11 usb | reset over USB (flasher, esptool-js) |
 
-`rtc=cold` / `last=power lost` means the RTC memory was gone: **the board had no
-power** (switch off, the cell protection tripped, a broken joint). `rtc=warm` with
-reset 1 should be the RST key (whether RTC memory survives RST or a brownout is not
-yet confirmed on the device); with task-wdt/panic, `last` says where the firmware was.
+`rtc=cold` / `last=rtc lost` means the RTC memory was gone: **the board lost power**
+(switch off, the cell protection tripped, a broken joint) **or the RST key was
+pressed** — EN low powers the C3 down, and both report reset 1. So when it goes
+dark, meter it before pressing RST ([Field notes](#field-notes)): RST wipes the
+breadcrumbs, and if RST revives it, that alone says the chip had power. `rtc=warm`
+with reset 9 is a brownout (IDF handles it as a software reset that keeps RTC memory
+— from the IDF source, not yet seen on the device); with task-wdt/panic, `last` says
+where the firmware was.
 
 Reading it on macOS with nothing installed:
 
@@ -226,14 +231,17 @@ Reading it on macOS with nothing installed:
 Wake sources: every deep sleep arms the GPIO wake of the buttons that are up **and a
 timer**. Both up → the timer is a 1 h safety wake: the chip boots, finds no armed
 button down and goes straight back to sleep — no blink, no serial, no flash write,
-no OLED, count unchanged. A button held at sleep time (both held ≥ 30 s, or a press
-inside the debounce window at the timeout) is left out of the GPIO mask — its low
-level would re-wake at once — and re-checked by the timer on a 2, 4, 8 … 600 s
-backoff, so a stuck-low button cannot hold the chip awake or leave it unwakeable.
-After such a hold, a press of that same button is seen only once a timer wake has
-found it up and re-armed it. `setup()` still seeds the button state instead of
-waiting for a release, so the wake press doesn't count. Cost, estimated and
-unmeasured: ≈1–2 µAh per timer wake (≈0.2 s of boot at ≈20–25 mA), i.e. ≈1–2 µA
+no OLED, count unchanged. A button that is down at the 30 s deadline is left out of
+the GPIO mask (its low level would re-wake at once) and re-checked by the timer on a
+2, 4, 8 … 600 s backoff. That happens when one is held ≥ 30 s; when both are held,
+which also zeroes the count (both ≥ 1 s → 0) unless one has been held since the wake
+press; or when a press lands in the 20 ms debounce window at the deadline. A
+stuck-low button therefore cannot hold the chip awake and the timer always comes
+back to it, but the interval grows while it stays down — it reaches the 600 s cap
+after ≈17 min — so after a long hold a press of that button is seen only once a
+timer wake has found it up and re-armed it, up to 10 min after its release.
+`setup()` still seeds the button state instead of waiting for a release, so the
+wake press doesn't count. Cost, estimated and unmeasured: ≈1–2 µAh per timer wake (≈0.2 s of boot at ≈20–25 mA), i.e. ≈1–2 µA
 averaged at one per hour — roughly 2–4 % of the ≈50 µA sleep budget.
 
 ### ESPHome (Home Assistant)
@@ -425,27 +433,30 @@ firmware (U8g2's centre mode on a font with a deep descent), not the panel — f
 button woke it, no blue blink. With the switch ON, a 5 V USB-C charger in the
 ESP32's own port revived it (at the plug, not when the lid came off), count kept;
 soldering and solder-side insulation checked fine afterwards. The cause is **not
-yet established**. Leading hypothesis: a dataless 5 V plug shouldn't wake or reset
-a powered C3 (VBUS only reaches the BAT60J → ME6211; EN is an RC + the RST key), so
-the ESP32 may have been **unpowered with a full cell** — the DW01's
-over-current/short latch, which holds while the load stays connected and is
-released by anything that looks like a charger (the back-fed 5 V through the 8205A
-body diode is one), or an intermittent joint in the power path. `OUT+`/`OUT−` were
-not measured, so this is inferred, not shown. Firmware is not ruled out either: a
-panic reboots and blinks and every I2C wait is bounded, but the firmware of that day
-had no loop watchdog and could sleep with no wake source armed (both buttons low at
-sleep time). The plain firmware now adds a loop watchdog, a timer wake beside the
-button wake, and RTC breadcrumbs + an NVS boot log that tell a power loss
-(`rtc=cold`, `last=power lost`) from a hang ([Plain](#plain-no-network)); until the
-meter readings below or that log separate them, treat both as open.
-Next time, **before plugging anything in**, meter `B+`/`B−`, then `OUT+`/`OUT−`,
-then the ESP32's `5V` and `3V3` pins; then press RST; then switch OFF → ON:
+yet established**. A firmware cause — a hang (that day's firmware had no loop
+watchdog) or a sleep with no wake source armed — leaves the ESP32 powered, and a
+dataless 5 V plug can't wake or reset a powered C3 (no USB wake source; VBUS only
+reaches the BAT60J → ME6211, EN is an RC + the RST key). The one path that empties
+the wake mask, both buttons down at the 30 s deadline, would also have zeroed the
+count (both held ≥ 1 s → 0) unless one had been held since the wake press — and the
+count was kept. So firmware is unlikely, but not excluded until the meter readings
+below or the new boot log confirm it. Leading hypothesis: the ESP32 was **unpowered
+with a full cell** — the DW01's over-current/short latch, which holds while the load
+stays connected and is released by anything that looks like a charger (the back-fed
+5 V through the 8205A body diode is one), or an intermittent joint in the power
+path. `OUT+`/`OUT−` were not measured, so this is inferred, not shown. The plain
+firmware now adds a loop watchdog, a timer wake beside the button wake, and RTC
+breadcrumbs + an NVS boot log that tell lost RTC memory (`rtc=cold`,
+`last=rtc lost`: power cut or RST) from a hang ([Plain](#plain-no-network)).
+Next time, **before plugging anything in or pressing RST**, meter `B+`/`B−`,
+`OUT+`/`OUT−` and `OUT−`/`B−`, then the ESP32's `5V` and `3V3` pins against its own
+`GND` pin (= `OUT−`); then press RST; then switch OFF → ON:
 
-| B+/B− | OUT+/OUT− | ESP `5V` / `3V3` | Meaning |
-|---|---|---|---|
-| 4.1 | ≈0 | 0 | DW01 latched — find the short/over-current (solder side, wiring) |
-| 4.1 | 4.1 | 0 | open between the TP4056 and the ESP32 — switch, wire or joint |
-| 4.1 | 4.1 | ≈4 / 3.3 | ESP32 powered — read the boot log over serial |
+| B+/B− | OUT+/OUT− | OUT−/B− | ESP `5V` / `3V3` | Meaning |
+|---|---|---|---|---|
+| 4.1 | ≈0 | ≈4 | 0 | DW01 latched (`OUT−` floats up through the load) — find the short/over-current (solder side, wiring) |
+| 4.1 | 4.1 | ≈0 | 0 | open between the TP4056 and the ESP32 — switch, wire or joint |
+| 4.1 | 4.1 | ≈0 | ≈4 / 3.3 | ESP32 powered — read the boot log over serial |
 
 ### Fit tuning
 

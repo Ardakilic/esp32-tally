@@ -1,9 +1,9 @@
 # CLAUDE.md — ESP32 Tally Counter
 
 Handheld tally counter: ESP32-C3 Super Mini + 0.91" SSD1306 OLED + two 6 × 6 tact
-switches + TP4056 + 503450 LiPo + SS12D00 slide switch on a 50 × 50 mm Özdisan
-single-sided 18 × 19-hole perfboard (used whole), in a 58.0 × 57.6 × 22.1 mm
-printed case with "Grindarr" engraved in the lid. Two firmwares (plain
+switches + TP4056 + 503450 850 mAh LiPo + SS12D00 slide switch on a 50 × 50 mm
+Özdisan single-sided 18 × 19-hole perfboard (used whole), in a 58.0 × 57.6 × 22.1
+mm printed case with "Grindarr" engraved in the lid. Two firmwares (plain
 PlatformIO, ESPHome) implement identical behaviour. Everything — STLs, README
 images, the 3D preview, the Pages index, both binaries — is **generated** through
 Docker + make; nothing is installed on the host and no generated file is ever
@@ -316,7 +316,9 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   `tally.up/down.raw/stable` from the pins and sets `tally.combo` if either is
   held, so the wake press's release is swallowed and a stuck-LOW button cannot
   block boot; `sleepArmed()` leaves a LOW pin out of the GPIO wake mask (it would
-  re-wake instantly; the always-armed timer re-checks it; IDF pulls up the wake pins itself,
+  re-wake instantly; the always-armed timer re-checks it, but the backoff reaches the
+  600 s cap after ≈17 min, so after a long hold a released button can stay unarmed up
+  to 10 min; IDF pulls up the wake pins itself,
   `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`). ESPHome `combo` global
   swallows the releases after a both-held reset; it is cleared when the *other*
   button is already up.
@@ -326,11 +328,14 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   NVS and OLED in `setup()` — the hourly wake is silent, writes nothing, counts
   nothing. `RTC_DATA_ATTR WakePlan wake` (bootloader reloads .rtc.data on any reset
   but deep sleep); `RTC_NOINIT_ATTR Trace trace` (POD, no initializers, magic
-  0x7A11C0DE; survives deep sleep and SW/panic/WDT resets per IDF, lost on power
-  loss; RST key and brownout unconfirmed on silicon). The C3 reports the EN/RST key as POWERON (reset 1), so `rtc=warm|cold`, not
-  the reset code, is what tells a power loss apart. Stages: 1 boot, 2 awake, 3 flush,
-  4 oled-off, 5 sleep; 0 = power lost. NVS key "bootlog" = raw `BootLog<8>` (36 B),
-  used only if `getBytesLength` == sizeof, read every boot, written only on a
+  0x7A11C0DE; survives deep sleep and SW/panic/WDT resets per IDF, lost on a power
+  cut). Brownout keeps it: `CONFIG_ESP_BROWNOUT_USE_INTR=y`, IDF's ISR sets the hint
+  and calls `esp_rom_software_reset_system()` → reset 9 with `rtc=warm` (IDF v5.5.5
+  source, not seen on the device). The RST key pulls EN low, which powers the C3 down
+  (a Chip Reset, reported as POWERON, reset 1) → expect `rtc=cold` (unconfirmed on
+  silicon); so `rtc=cold` means power cut **or** RST — meter before pressing RST.
+  Stages: 1 boot, 2 awake, 3 flush, 4 oled-off, 5 sleep; 0 = "rtc lost". NVS key
+  "bootlog" = raw `BootLog<8>` (36 B), used only if `getBytesLength` == sizeof, read every boot, written only on a
   non-deep-sleep boot. No delay before deep sleep: `setPowerSave(1)` (0xAE) is a
   synchronous I2C write and the OLED stays powered. `enableLoopWDT()` (first line of
   `setup()`) relies on `CONFIG_ESP_TASK_WDT_INIT=y`, `_PANIC=y`, `_TIMEOUT_S=5` in
@@ -430,8 +435,13 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   Incident 2026-10-18: after the 30 s sleep it stayed dark, no button wake, no blue
   blink, cell 4.1 V at B+/B− (OUT not measured); with the switch ON a 5 V charger in
   the ESP's USB-C revived it (at the plug, not at lid-off), count kept; Arda checked
-  soldering and insulation afterwards: fine. Leading diagnosis: ESP unpowered with a full
-  cell — DW01 short/over-current latch (released by the back-fed 5 V via the 8205A
-  body diode) or an intermittent power-path joint — a hypothesis (OUT not measured); firmware
-  not ruled out until the meter triage or the new boot log says so. README → Field
-  notes has the meter triage (B+/B−, OUT+/OUT−, ESP 5V/3V3, then RST, then OFF→ON).
+  soldering and insulation afterwards: fine. Firmware unlikely: a hang or a sleep with
+  no wake source leaves the ESP powered, and a dataless plug can't wake or reset a
+  powered C3; the one path that empties the wake mask (both buttons down at the 30 s
+  deadline) would have zeroed the count unless one was held since the wake press —
+  the count was kept. Not excluded until the meter triage or the new boot log confirms
+  it. Leading hypothesis: ESP unpowered with a full cell — DW01 short/over-current
+  latch (released by the back-fed 5 V via the 8205A body diode) or an intermittent
+  power-path joint — unmeasured (OUT+/OUT− not metered). README → Field notes has the
+  meter triage (B+/B−, OUT+/OUT−, OUT−/B−, ESP 5V/3V3 vs its GND = OUT−, then RST,
+  then OFF→ON).
