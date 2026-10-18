@@ -438,10 +438,11 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   soldering and insulation afterwards: fine. Firmware unlikely: a hang or a sleep with
   no wake source leaves the ESP powered, and a dataless plug can't wake or reset a
   powered C3; the one path that empties the wake mask (both buttons down at the 30 s
-  deadline) would have zeroed the count unless one was held since the wake press —
-  the count was kept. Not excluded until the meter triage or the new boot log confirms
-  it. Leading hypothesis: ESP unpowered with a full cell — DW01 short/over-current
-  latch (released by the back-fed 5 V via the 8205A body diode) or an intermittent
+  deadline) would have zeroed the count unless one was already down at boot (wake
+  press held on, or jammed / shorted low: the seeded `combo` blocks the reset until
+  both are up) — the count was kept. Not excluded until the meter triage or the new
+  boot log confirms it. Leading hypothesis: ESP unpowered with a full cell — DW01
+  short/over-current latch (released by the back-fed 5 V via the 8205A body diode) or an intermittent
   power-path joint — unmeasured (OUT+/OUT− not metered). README → Field notes has the
   meter triage (B+/B−, OUT+/OUT−, OUT−/B−, ESP 5V/3V3 vs its GND = OUT−, then RST,
   then OFF→ON).

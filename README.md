@@ -237,9 +237,10 @@ button down and goes straight back to sleep — no blink, no serial, no flash wr
 no OLED, count unchanged. A button that is down at the 30 s deadline is left out of
 the GPIO mask (its low level would re-wake at once) and re-checked by the timer on a
 2, 4, 8 … 600 s backoff. That happens when one is held ≥ 30 s; when both are held,
-which also zeroes the count (both ≥ 1 s → 0) unless one has been held since the wake
-press; or when a press lands in the 20 ms debounce window at the deadline. A
-stuck-low button therefore cannot hold the chip awake and the timer always comes
+which also zeroes the count (both ≥ 1 s → 0) unless one was already down at boot (the
+wake press held on, or a jammed cap / pin shorted low); or when a press lands in the
+20 ms debounce window at the deadline. A stuck-low button therefore cannot hold the
+chip awake and the timer always comes
 back to it, but the interval grows while it stays down — it reaches the 600 s cap
 after ≈17 min — so after a long hold a press of that button is seen only once a
 timer wake has found it up and re-armed it, up to 10 min after its release.
@@ -442,9 +443,10 @@ watchdog) or a sleep with no wake source armed — leaves the ESP32 powered, and
 dataless 5 V plug can't wake or reset a powered C3 (no USB wake source; VBUS only
 reaches the BAT60J → ME6211, EN is an RC + the RST key). The one path that empties
 the wake mask, both buttons down at the 30 s deadline, would also have zeroed the
-count (both held ≥ 1 s → 0) unless one had been held since the wake press — and the
-count was kept. So firmware is unlikely, but not excluded until the meter readings
-below or the new boot log confirm it. Leading hypothesis: the ESP32 was **unpowered
+count (both held ≥ 1 s → 0) unless one was already down at boot (held on from the
+wake press, or a jammed cap / pin shorted low) — and the count was kept. So firmware
+is unlikely, but not excluded until the meter readings below or the new boot log
+confirm it. Leading hypothesis: the ESP32 was **unpowered
 with a full cell** — the DW01's over-current/short latch, which holds while the load
 stays connected and is released by anything that looks like a charger (the back-fed
 5 V through the 8205A body diode is one), or an intermittent joint in the power
