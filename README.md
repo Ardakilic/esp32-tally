@@ -213,8 +213,8 @@ write per such boot, none per wake.
 `rtc=cold` / `last=rtc lost` means the RTC memory was gone: **the board lost power**
 (switch off, the cell protection tripped, a broken joint) **or the RST key was
 pressed** — EN low powers the C3 down, and both report reset 1. So when it goes
-dark, meter it before pressing RST ([Field notes](#field-notes)): RST wipes the
-breadcrumbs, and if RST revives it, that alone says the chip had power. `rtc=warm`
+dark, meter it before pressing RST ([Field notes](#field-notes)): RST most likely
+wipes the breadcrumbs, and if RST revives it, that alone says the chip had power. `rtc=warm`
 with reset 9 is a brownout (IDF handles it as a software reset that keeps RTC memory
 — from the IDF source, not yet seen on the device); with task-wdt/panic, `last` says
 where the firmware was.
@@ -417,7 +417,8 @@ the OLED's free end before closing.
 
 First build, 2026-10-10: with the TP4056 and cell hot-glued under the board the
 OLED stayed dark until the glue came off — contact through the header stubs and
-joint stress, not EMI; hence steps 5–6. Dark-display triage, in order: press
+joint stress, not EMI; hence steps 5–6. Dark-display triage, in order (if a button
+press doesn't even blink the blue LED, meter first — 2026-10-18 note below): press
 **RST**; the serial port appears (`ls /dev/cu.usbmodem*`) and vanishes after 30 s
 (deep sleep); [web.esphome.io](https://web.esphome.io) → **Logs** shows `count=N`
 per click; the blue GPIO8 blink on boot = MCU alive; then meter the OLED header
