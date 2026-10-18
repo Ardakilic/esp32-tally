@@ -219,7 +219,10 @@ with reset 9 is a brownout (IDF handles it as a software reset that keeps RTC me
 — from the IDF source, not yet seen on the device); with task-wdt/panic, `last` says
 where the firmware was.
 
-Reading it on macOS with nothing installed:
+Reading it on macOS with nothing installed. After a dark episode, meter first
+([Field notes](#field-notes)): step 1's switch OFF wipes the RTC breadcrumbs like
+RST does, so the boot it causes reports `rtc=cold` / `last=rtc lost`; the earlier
+boots stay in the `log` lines.
 
 1. Switch OFF (`5V` = VBUS, see [Power notes](#power-notes)), open the lid, plug a
    **data** cable into the ESP32's USB-C.
@@ -447,9 +450,13 @@ stays connected and is released by anything that looks like a charger (the back-
 5 V through the 8205A body diode is one), or an intermittent joint in the power
 path. `OUT+`/`OUT−` were not measured, so this is inferred, not shown. The plain
 firmware now adds a loop watchdog, a timer wake beside the button wake, and RTC
-breadcrumbs + an NVS boot log that tell lost RTC memory (`rtc=cold`,
-`last=rtc lost`: power cut or RST) from a hang ([Plain](#plain-no-network)).
-Next time, **before plugging anything in or pressing RST**, meter `B+`/`B−`,
+breadcrumbs + an NVS boot log ([Plain](#plain-no-network)). The log records boots
+only: a hang the watchdog catches reboots as `reset=6` with `last=` the stage it
+stopped in, but a hang that never reboots leaves no line of its own. RST and
+switching OFF (also step 1 of reading the serial port) wipe the breadcrumbs, so the
+boot after either reports `rtc=cold` / `last=rtc lost`, not where the firmware
+stopped. Next time, **before plugging anything in, pressing RST or switching OFF**,
+meter `B+`/`B−`,
 `OUT+`/`OUT−` and `OUT−`/`B−`, then the ESP32's `5V` and `3V3` pins against its own
 `GND` pin (= `OUT−`); then press RST; then switch OFF → ON:
 
