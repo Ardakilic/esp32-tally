@@ -38,7 +38,9 @@ as ghosts.*
   `save_delay` substitution, used by the restart-mode `save_later` script, with
   `flash_write_interval: never`.
 - **30 s idle → OLED off + deep sleep**; either button wakes it (that press is not
-  counted). Slide switch = hard power off.
+  counted). A 5 min timer wake re-arms the wake sources and immediately re-sleeps
+  (invisible), so a sleep that armed no button recovers by itself. Slide switch =
+  hard power off.
 - **Charging over USB-C** through a TP4056 module with cell protection; the ESP32's
   own USB-C is for flashing only and sits behind the lid (see [Power notes](#power-notes)).
 - ESPHome variant adds Home Assistant entities: number **Tally Count** (settable),
@@ -175,7 +177,10 @@ wiring) is the problem. The USB serial port (115200) prints
 count at boot, then `count=N` per click. A button stuck low (solder bridge, jammed
 cap) cannot hold the chip awake: `setup()` seeds the button state instead of
 waiting for a release (so the wake press still doesn't count), and a pin that is
-low at sleep time is left out of the wake mask.
+low at sleep time is left out of the wake mask. Every sleep also arms a 5 min timer
+(`RESCUE_US` in `src/main.cpp`) and a bare timer tick re-sleeps at once — no blink, no
+Serial, no OLED, no NVS — so a both-low sleep recovers by itself within 5 min instead
+of needing USB/RST (≈0.5 mAh/day, negligible next to the red power LED).
 
 ### ESPHome (Home Assistant)
 
@@ -356,7 +361,16 @@ joint stress, not EMI; hence steps 5–6. Dark-display triage, in order: press
 per click; the blue GPIO8 blink on boot = MCU alive; then meter the OLED header
 (VCC 3.3 V, SDA/SCL idle at 3.3 V) and reflow. A deep-sleeping ESP32-C3 does
 **not** wake when USB is plugged in — only a button or RST does — and with the
-slide switch ON a USB plug back-feeds the cell ([Power notes](#power-notes)).
+slide switch ON a USB plug back-feeds the cell ([Power notes](#power-notes)). A
+unit that looks dead and comes back the moment USB is inserted was therefore reset
+by it, not woken. One unit did exactly that (2026-10-18, cell at 4.1 V, both
+buttons dead); the prime suspect is a sleep whose GPIO wake mask came out empty —
+both pins low at the 30 s deadline — and the plain firmware now arms a 5 min
+rescue timer on every sleep, so such a state recovers by itself (liveness notes
+under [Plain (no network)](#plain-no-network)). If it recurs: meter 3V3 while it
+looks dead (0 V = power path, 3.3 V = sleep/GPIO) and read the `boot reset=/wake=`
+banner after the revival.
+
 Digits cut off at the top with blank rows below were a placement bug in the plain
 firmware (U8g2's centre mode on a font with a deep descent), not the panel — fixed
 2026-10-11; reflash.
@@ -510,6 +524,9 @@ order they'd bite:
 - **Deep-sleep wake on both buttons** (GPIO3 | GPIO4 mask via
   `esp_deep_sleep_enable_gpio_wakeup`) — compiles on both builds, untested on
   silicon; so is the plain build's GPIO8 blue boot blink.
+- The plain build's **5 min rescue timer** (`RESCUE_US`, added 2026-10-18) — an
+  unwatched timer tick has never been timed on silicon, but the worst case is a
+  short boot every 5 min and a re-armed wake mask.
 - The ESPHome **`millis() > 1500` wake-press guard** (the press that woke the chip
   is already ON at boot; its release must not count) — margin chosen by reasoning,
   not measured boot time.

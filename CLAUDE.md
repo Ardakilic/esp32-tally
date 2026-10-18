@@ -24,7 +24,8 @@ firmware/plain/                PlatformIO + Arduino 3.3.12 (pioarduino 55.03.312
                                reset) + `struct SaveDelay` (touch/due: one save per burst)
   src/main.cpp                 pins, U8g2 (big digits, brew labels stacked to their right, drawn
                                on a click only), Preferences/NVS (SaveDelay, flush in sleepNow()),
-                               deep sleep, seeded button state, GPIO8 boot blink, serial boot banner
+                               deep sleep (+5 min rescue timer), seeded button state, GPIO8
+                               boot blink, serial boot banner
   test/tally_logic_test.cpp    assert self-test: state machine, SaveDelay, grind chart (table
                                sanity, match oracle 0..100, max 0 / max 1 cap, one shipped-table
                                spot check), runs in gcc:14 — the committed test
@@ -305,7 +306,12 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   held, so the wake press's release is swallowed and a stuck-LOW button cannot
   block boot; `sleepNow()` leaves a LOW pin out of the GPIO wake mask (it would
   re-wake instantly; IDF pulls up the wake pins itself,
-  `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`). ESPHome `combo` global
+  `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`). A mask that comes out empty
+  (both pins low at the deadline) would sleep until an external reset, so every
+  sleep also arms `RESCUE_US` (5 min): `enterSleep()` is the shared arm-and-sleep
+  path, and a bare `ESP_SLEEP_WAKEUP_TIMER` wake makes `setup()` call it straight
+  after `pinMode` — no LED/Serial/OLED/NVS — then re-arm from the current pin
+  levels (≈0.5 mAh/day). ESPHome `combo` global
   swallows the releases after a both-held reset; it is cleared when the *other*
   button is already up.
 - `wifi`/`api` `reboot_timeout: 0s`: never reboot for lack of network.
@@ -314,7 +320,8 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   the restored count. GPIO8 (`LED_PIN`, blue LED, active-LOW, 10 k pull-up,
   strapping pin) is driven LOW for the length of `setup()` (≈0.3 s, mostly U8g2's
   2 × 100 ms + 100 ms SSD1306 reset delays) then returned to INPUT — a blink with
-  a dark OLED means MCU alive, display dead. One save rule, both
+  a dark OLED means MCU alive, display dead. The 5 min rescue-timer tick sleeps
+  before that line, so no blink every 5 min. One save rule, both
   firmwares: every click restarts a 2 s timer, gaps under 2 s never write, the pause
   after the last click writes the final count once (one write per burst); sleep
   flushes a pending count first; a power cut during a burst or within 2 s of the last

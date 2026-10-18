@@ -10,6 +10,10 @@ constexpr int BTN_UP = 3, BTN_DOWN = 4;
 // Lit only while setup() runs, so a blink on every boot/wake proves the MCU is alive with a dark OLED.
 constexpr int LED_PIN = 8;
 constexpr uint32_t IDLE_SLEEP_MS = 30000;
+// Heartbeat: wake and re-sleep every 5 min even with no button held. A pin that reads LOW
+// at sleep time is left out of the wake mask (it would re-wake instantly), so without a
+// timer such a sleep would be unreachable until an external reset.
+constexpr uint64_t RESCUE_US = 5 * 60 * 1000000ULL;
 #ifndef SAVE_DELAY_MS
 #define SAVE_DELAY_MS 2000  // see platformio.ini build_flags
 #endif
@@ -53,22 +57,32 @@ static void flush() {
   save.dirty = false;
 }
 
-static void sleepNow() {
-  flush();
-  u8g2.setPowerSave(1);
+// Arm the wake sources and stop the CPU; callers flush NVS and switch the panel off first.
+static void enterSleep() {
   uint64_t mask = (digitalRead(BTN_UP) ? BIT(BTN_UP) : 0) | (digitalRead(BTN_DOWN) ? BIT(BTN_DOWN) : 0);
   if (mask) esp_deep_sleep_enable_gpio_wakeup(mask, ESP_GPIO_WAKEUP_GPIO_LOW);  // a held/stuck pin would re-wake instantly
+  esp_sleep_enable_timer_wakeup(RESCUE_US);  // the timer tick is the wake source of last resort
   esp_deep_sleep_start();
 }
 
+static void sleepNow() {
+  flush();
+  u8g2.setPowerSave(1);
+  enterSleep();
+}
+
 void setup() {
+  pinMode(BTN_UP, INPUT_PULLUP);
+  pinMode(BTN_DOWN, INPUT_PULLUP);
+  // Rescue-timer tick (nothing happened while asleep): the panel is still off and the count
+  // is already in NVS, so skip Serial/OLED/NVS and go straight back to sleep — an invisible
+  // ≈0.2 s heartbeat that keeps an empty wake mask from stranding the chip until a reset.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) enterSleep();
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
   Serial.begin(115200);
   Serial.setTxTimeoutMs(0);  // USB CDC with no host attached must never stall the loop
   Serial.printf("boot reset=%d wake=%d\n", (int)esp_reset_reason(), (int)esp_sleep_get_wakeup_cause());
-  pinMode(BTN_UP, INPUT_PULLUP);
-  pinMode(BTN_DOWN, INPUT_PULLUP);
   prefs.begin("tally");
   tally.count = prefs.getInt("count", 0);
   Serial.printf("count=%ld (restored)\n", (long)tally.count);
