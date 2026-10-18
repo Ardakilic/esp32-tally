@@ -1,9 +1,9 @@
 # CLAUDE.md — ESP32 Tally Counter
 
 Handheld tally counter: ESP32-C3 Super Mini + 0.91" SSD1306 OLED + two 6 × 6 tact
-switches + TP4056 + 503450 LiPo + SS12D00 slide switch on a 50 × 50 mm Özdisan
-single-sided 18 × 19-hole perfboard (used whole), in a 58.0 × 57.6 × 22.1 mm
-printed case with "Grindarr" engraved in the lid. Two firmwares (plain
+switches + TP4056 + 503450 850 mAh LiPo + SS12D00 slide switch on a 50 × 50 mm
+Özdisan single-sided 18 × 19-hole perfboard (used whole), in a 58.0 × 57.6 × 22.1
+mm printed case with "Grindarr" engraved in the lid. Two firmwares (plain
 PlatformIO, ESPHome) implement identical behaviour. Everything — STLs, README
 images, the 3D preview, the Pages index, both binaries — is **generated** through
 Docker + make; nothing is installed on the host and no generated file is ever
@@ -22,12 +22,18 @@ firmware/common/grind_chart.h  shared brew table GRIND_CHART + GRIND_MAX_LINES +
 firmware/plain/                PlatformIO + Arduino 3.3.12 (pioarduino 55.03.312-1), U8g2 2.36.18
   src/tally_logic.h            pure C++ state machine (debounce, clamp, both-held
                                reset) + `struct SaveDelay` (touch/due: one save per burst)
+                               + `struct WakePlan` (GPIO mask of the up buttons + timer s:
+                               3600, or 2→600 backoff while one is down; is_press on a timer
+                               wake) + `BootLog<N>` (ring of the last N non-deep-sleep boots)
   src/main.cpp                 pins, U8g2 (big digits, brew labels stacked to their right, drawn
                                on a click only), Preferences/NVS (SaveDelay, flush in sleepNow()),
-                               deep sleep, seeded button state, GPIO8 boot blink, serial boot banner
-  test/tally_logic_test.cpp    assert self-test: state machine, SaveDelay, grind chart (table
-                               sanity, match oracle 0..100, max 0 / max 1 cap, one shipped-table
-                               spot check), runs in gcc:14 — the committed test
+                               enableLoopWDT, deep sleep (sleepNow → sleepArmed, silent timer
+                               re-sleep at the top of setup()), seeded button state, GPIO8 boot
+                               blink, RTC_NOINIT `trace` breadcrumbs, NVS "bootlog", report()
+                               at boot + on any serial key
+  test/tally_logic_test.cpp    assert self-test: state machine, SaveDelay, WakePlan, BootLog, grind
+                               chart (table sanity, match oracle 0..100, max 0 / max 1 cap, one
+                               shipped-table spot check), runs in gcc:14 — the committed test
   Dockerfile                   python:3.12-slim + platformio 6.2.0 + git, PLATFORMIO_CORE_DIR=/pio
   build/tally-plain.factory.bin  output (gitignored with .pio/)
 firmware/esphome/tally.yaml    ESPHome 2026.9.1, esp-idf; secrets.yaml (gitignored) from .example
@@ -61,7 +67,7 @@ make case            # image-case, generate.py, render_docs.py -> case/stl, case
                      # index.html, case/docs
 make case-verify     # verify.py in a throwaway container (requirements-dev.txt extras)
 make vendor          # refresh both three.js files in case/vendor/ (bare python:3.14-slim)
-make plain           # pio run -> firmware/plain/build/tally-plain.factory.bin (407 KiB)
+make plain           # pio run -> firmware/plain/build/tally-plain.factory.bin (410 KiB)
 make plain-test      # host self-test, firmware/ at /work, -Isrc -I../common; prints OK
 make esphome         # compile; fails with a message if secrets.yaml is missing
 make esphome-config  # validate only
@@ -75,7 +81,7 @@ make case OMIT_ENGRAVING=1      # appends --omit-engraving (plain lid top)
 
 Expected results: verify `105 checks — ALL PASS` (70 with `--snap-bite 0`, 101 with
 `--omit-engraving`);
-plain RAM 4.6 % / Flash 25.5 %, factory bin 407 KiB (416640 bytes);
+plain RAM 4.6 % / Flash 25.8 %, factory bin 410 KiB (419904 bytes);
 ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
 
 ## Technology decisions (and why)
@@ -140,9 +146,11 @@ ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
   pinout, confirmed on the assembled board 2026-10-10.
 - **Super Mini power** (mischianti schematic, 2025-07): `5V` header pin = USB VBUS
   net before BAT60J diode → ME6211 3.3 V LDO. Battery path Vbat → BAT60J
-  (≈0.2–0.3 V) → ME6211 → 3V3: regulation to ≈3.6–3.7 V, 3V3 sags below ≈3.4 V
-  (plain OK, Wi-Fi may brown out); DW01 cuts at 2.4 V. Red power LED ≈1–3 mA in
-  deep sleep when fed through `5V`. TP4056 OUT− is the switched node (low-side
+  (≈0.2–0.3 V) → ME6211 → 3V3: regulation to ≈3.6–3.7 V, then 3V3 follows the cell;
+  below 3.0 V the C3, flash and OLED are out of spec, brownout (level 7) trips only
+  at 2.51 V (Wi-Fi browns out first); DW01 cuts at 2.4 V. Red power LED on VSYS
+  (after the BAT60J), so the cell keeps it lit in deep sleep; current unmeasured
+  (removed on Arda's unit 2026-10-18). TP4056 OUT− is the switched node (low-side
   protection) → star grounds at OUT−. Default R_PROG 1.2 kΩ = 1 A.
 - **Module dimensions** (sources linked in README → Verified part geometry):
   Super Mini 18 × 22.5, pin rows 15.24 apart, first pin 2.36 from the USB edge,
@@ -156,7 +164,11 @@ ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
 - **Behaviour contract** (both firmwares, tested in `tally_logic_test.cpp`): click
   counts on release, 20 ms debounce, 0…99999, both held ≥ 1 s → 0 and the two
   releases are swallowed, 30 s idle → OLED off + deep sleep, the wake press is not
-  counted.
+  counted. Plain only (`WakePlan`/`BootLog` tested): every sleep also arms a timer —
+  1 h silent safety wake when both buttons are up, 2→4→…→600 s backoff while one is
+  held (left out of the GPIO mask); loop WDT 5 s (`enableLoopWDT`, panic + reboot);
+  NVS boot log of the last 8 non-deep-sleep boots. ESPHome unchanged: its loop is
+  already subscribed to the task WDT and it always arms GPIO3.
 - **OLED rows** (128 × 32; the count sits at the same rows with or without labels, the
   labels are stacked to its right, block centred vertically). Plain (explicit baselines,
   default U8g2 font position): `logisoso28_tn` baseline 30 → digits rows 2..29;
@@ -303,16 +315,38 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   `millis() > 1500` in both `on_release` lambdas. Plain build: `setup()` seeds
   `tally.up/down.raw/stable` from the pins and sets `tally.combo` if either is
   held, so the wake press's release is swallowed and a stuck-LOW button cannot
-  block boot; `sleepNow()` leaves a LOW pin out of the GPIO wake mask (it would
-  re-wake instantly; IDF pulls up the wake pins itself,
+  block boot; `sleepArmed()` leaves a LOW pin out of the GPIO wake mask (it would
+  re-wake instantly; the always-armed timer re-checks it, but the backoff reaches the
+  600 s cap after ≈17 min, so after a long hold a released button can stay unarmed up
+  to 10 min; IDF pulls up the wake pins itself,
   `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`). ESPHome `combo` global
   swallows the releases after a both-held reset; it is cleared when the *other*
   button is already up.
 - `wifi`/`api` `reboot_timeout: 0s`: never reboot for lack of network.
+- Plain timer wake: the `ESP_SLEEP_WAKEUP_TIMER` branch (pull-ups, 100 µs settle,
+  `wake.is_press()` → else `sleepArmed()`) must stay **before** the LED, Serial,
+  NVS and OLED in `setup()` — the hourly wake is silent, writes nothing, counts
+  nothing. `RTC_DATA_ATTR WakePlan wake` (bootloader reloads .rtc.data on any reset
+  but deep sleep); `RTC_NOINIT_ATTR Trace trace` (POD, no initializers, magic
+  0x7A11C0DE; survives deep sleep and SW/panic/WDT resets per IDF, lost on a power
+  cut). Brownout keeps it: `CONFIG_ESP_BROWNOUT_USE_INTR=y`, IDF's ISR sets the hint
+  and calls `esp_rom_software_reset_system()` → reset 9 with `rtc=warm` (IDF v5.5.5
+  source, not seen on the device). The RST key pulls EN low, which powers the C3 down
+  (a Chip Reset, reported as POWERON, reset 1) → expect `rtc=cold` (unconfirmed on
+  silicon); so `rtc=cold` means power cut **or** RST — meter before pressing RST.
+  Stages: 1 boot, 2 awake, 3 flush, 4 oled-off, 5 sleep; 0 = "rtc lost". NVS key
+  "bootlog" = raw `BootLog<8>` (36 B), used only if `getBytesLength` == sizeof, read every boot, written only on a
+  non-deep-sleep boot. No delay before deep sleep: `setPowerSave(1)` (0xAE) is a
+  synchronous I2C write and the OLED stays powered. `enableLoopWDT()` (first line of
+  `setup()`) relies on `CONFIG_ESP_TASK_WDT_INIT=y`, `_PANIC=y`, `_TIMEOUT_S=5` in
+  the Arduino libs' sdkconfig; a TWDT panic reboots as reset 6 (`ESP_RST_TASK_WDT`).
 - Plain build: `Serial.setTxTimeoutMs(0)` — USB CDC with no host must not stall
-  the loop. Boot prints `boot reset=<esp_reset_reason> wake=<wakeup cause>` and
-  the restored count. GPIO8 (`LED_PIN`, blue LED, active-LOW, 10 k pull-up,
-  strapping pin) is driven LOW for the length of `setup()` (≈0.3 s, mostly U8g2's
+  the loop; so **never `Serial.flush()`** (with timeout 0 it discards the TX ring).
+  `setTxBufferSize(1024)` before `begin()` (HWCDC with no host keeps the newest
+  bytes). Boot prints `boot reset=<n> (<name>) wake=<cause> rtc=<warm|cold>
+  last=<stage> sleeps=<n> timer_wakes=<n>`, one `log k/total:` line per kept boot,
+  and the restored count; any serial input re-prints the report from `loop()`.
+  GPIO8 (`LED_PIN`, blue LED, active-LOW, 10 k pull-up, strapping pin) is driven LOW for the length of `setup()` (≈0.3 s, mostly U8g2's
   2 × 100 ms + 100 ms SSD1306 reset delays) then returned to INPUT — a blink with
   a dark OLED means MCU alive, display dead. One save rule, both
   firmwares: every click restarts a 2 s timer, gaps under 2 s never write, the pause
@@ -391,5 +425,24 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   `OLED_AA_DX`, engraving legibility, the ESPHome variant (untested on hardware,
   incl. the 1.5 s wake guard), the brew-label layout (labels one per line right of
   the digits) and 400 kHz I2C (both builds, untested on hardware; the stacked
-  digits-over-label layout was rejected by Arda on 2026-10-11 as cramped), and the
-  100 mAh cell needs R_PROG ≥ 12 kΩ (default 1.2 kΩ = 1 A).
+  digits-over-label layout was rejected by Arda on 2026-10-11 as cramped), the
+  installed 850 mAh cell at the 1 A default is ≈1.2 C (README's option: R_PROG 2 kΩ
+  ≈ 580 mA), the plain build's loop WDT / timer safety wake / stuck-button backoff /
+  boot log (2026-10-18, untested on silicon), and ESPHome's stuck-button exposures:
+  a stuck GPIO3 keeps it awake with Wi-Fi, a stuck GPIO4 is always in the lambda's
+  wake mask so it re-wakes in a loop.
+- Installed cell: **850 mAh**; the Super Mini's red LED was removed (2026-10-18).
+  Incident 2026-10-18: after the 30 s sleep it stayed dark, no button wake, no blue
+  blink, cell 4.1 V at B+/B− (OUT not measured); with the switch ON a 5 V charger in
+  the ESP's USB-C revived it (at the plug, not at lid-off), count kept; Arda checked
+  soldering and insulation afterwards: fine. Firmware unlikely: a hang or a sleep with
+  no wake source leaves the ESP powered, and a dataless plug can't wake or reset a
+  powered C3; the one path that empties the wake mask (both buttons down at the 30 s
+  deadline) would have zeroed the count unless one was already down at boot (wake
+  press held on, or jammed / shorted low: the seeded `combo` blocks the reset until
+  both are up) — the count was kept. Not excluded until the meter triage or the new
+  boot log confirms it. Leading hypothesis: ESP unpowered with a full cell — DW01
+  short/over-current latch (released by the back-fed 5 V via the 8205A body diode) or an intermittent
+  power-path joint — unmeasured (OUT+/OUT− not metered). README → Field notes has the
+  meter triage (B+/B−, OUT+/OUT−, OUT−/B−, ESP 5V/3V3 vs its GND = OUT−, then RST,
+  then OFF→ON).

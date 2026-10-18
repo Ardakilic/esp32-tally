@@ -50,3 +50,37 @@ struct SaveDelay {
   void touch(uint32_t now) { dirty = true; since = now; }
   bool due(uint32_t now, uint32_t delay_ms) const { return dirty && now - since >= delay_ms; }
 };
+
+// Deep-sleep wake plan (bit 1 = UP, 2 = DOWN). Every sleep arms a timer besides the GPIO wake of
+// the buttons that are up: a held/stuck button stays out of the GPIO mask (its low level would
+// re-wake at once) and is re-checked on a backoff, and the hourly wake re-arms even if a GPIO wake
+// never comes. Limitation: a button left unarmed (held at sleep) that is down at a timer wake counts
+// as still stuck, so after a >= 30 s hold a new press of that same button is only seen after a later
+// re-arm (the next timer wake that finds it up).
+struct WakePlan {
+  static constexpr uint8_t BOTH = 3;
+  static constexpr uint32_t RETRY_MIN_S = 2, RETRY_MAX_S = 600, SAFETY_S = 3600;
+  uint8_t armed = 0;     // buttons GPIO-armed for the current sleep
+  uint32_t retry_s = 0;  // 0 = both were up; else the backoff while one is down
+
+  // Sets armed, returns the timer interval in s.
+  uint32_t plan(uint8_t up) {
+    armed = up & BOTH;
+    if (armed == BOTH) { retry_s = 0; return SAFETY_S; }
+    retry_s = !retry_s ? RETRY_MIN_S : retry_s * 2 < RETRY_MAX_S ? retry_s * 2 : RETRY_MAX_S;
+    return retry_s;
+  }
+  // Timer wake: an armed button that is down = a press that raced the timer.
+  bool is_press(uint8_t down) const { return armed & down; }
+};
+
+// The last N boots that were not a deep-sleep wake; stage 0 = RTC memory lost (power cut or RST key).
+// Stored as one NVS blob, so it stays a plain fixed-size struct.
+template <int N> struct BootLog {
+  struct Rec { uint8_t reason, stage; uint16_t sleeps; };
+  Rec rec[N] = {};
+  uint32_t total = 0;
+  void push(Rec r) { rec[total % N] = r; ++total; }  // overwrites the oldest
+  int size() const { return total < (uint32_t)N ? (int)total : N; }
+  const Rec &at(int i) const { return rec[(total - size() + i) % N]; }  // i-th oldest kept
+};
