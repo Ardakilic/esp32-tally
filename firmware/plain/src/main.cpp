@@ -58,6 +58,10 @@ static void flush() {
 static bool displayOn = false;
 
 static void armWake() {
+  // Clear retained config: sleepNow() arms twice and enable() ORs, so without
+  // this the second call would keep the first call's source instead of latest winning.
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
   bool upHigh = digitalRead(BTN_UP);
   bool downHigh = digitalRead(BTN_DOWN);
   static_assert(SLEEP_BTN_UP == BTN_UP && SLEEP_BTN_DOWN == BTN_DOWN, "sleep_logic pins must match wiring");
