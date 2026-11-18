@@ -6,6 +6,9 @@
                              with every component, pin name and wire
   docs/wiring.png            block schematic (power path + signals)
 
+With --mcu rp2040-zero the same three go to docs/rp2040-zero/, drawn from the
+RP2040-Zero's pin list, wires and blocks (MODULES below).
+
 Usage:  python3 tools/render_docs.py [generate.py flags]
 """
 
@@ -26,7 +29,6 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 import generate as g  # noqa: E402  (has a __main__ guard — importing is free)
 
-DOCS = os.path.join(ROOT, "docs")
 GRAY, BLUE, CAP = "#9aa2ad", "#5f8cc4", "#e0a040"
 GHOSTS = {  # component box -> translucent colour
     "perfboard": (0.75, 0.55, 0.20, 0.45), "battery": (0.35, 0.65, 0.85, 0.45),
@@ -94,7 +96,7 @@ def render_case(out_path):
     ax = fig.add_subplot(1, 2, 2, projection="3d")
     show(ax, exploded)
     ax.set_title("exploded — lid +25, caps +12; perfboard, battery, TP4056, "
-                 "ESP32, OLED as ghosts", fontsize=10)
+                 f"{g.MCU_SHORT}, OLED as ghosts", fontsize=10)
     fig.patch.set_facecolor("white")
     plt.tight_layout()
     plt.savefig(out_path, bbox_inches="tight")
@@ -102,27 +104,58 @@ def render_case(out_path):
     print("saved", out_path)
 
 
+OLED_PINS = ["GND", "VCC", "SCL", "SDA"]  # rows 14..17, the usual order — check
+OLED_ROWS = range(14, 18)
+TACT_ROWS = (10, 12)  # tact pins straddle the body on row 11
+
+
+def pin_map(left, right):
+    """Module pin name -> perfboard hole: left = col 3, right = col 9, from row 0."""
+    return {**{n: (3, r) for r, n in enumerate(left)}, **{n: (9, r) for r, n in enumerate(right)}}
+
+
 # ESP32-C3 Super Mini pin names with the USB at Y-, board viewed from above.
 # Left = col 3, right = col 9, rows 0..7 (0 = USB end). Verified against the
 # mischianti photo pinout and on a real board 2026-10-10 (an earlier version had
 # the two columns mirrored). Still worth a glance at the silkscreen.
-ESP_LEFT = ["5V", "GND", "3V3", "GPIO4", "GPIO3", "GPIO2", "GPIO1", "GPIO0"]
-ESP_RIGHT = ["GPIO5", "GPIO6", "GPIO7", "GPIO8", "GPIO9", "GPIO10", "GPIO20", "GPIO21"]
-OLED_PINS = ["GND", "VCC", "SCL", "SDA"]  # rows 14..17, the usual order — check
-OLED_ROWS = range(14, 18)
-TACT_ROWS = (10, 12)  # tact pins straddle the body on row 11
-ESP_PIN = {**{n: (3, r) for r, n in enumerate(ESP_LEFT)},
-           **{n: (9, r) for r, n in enumerate(ESP_RIGHT)}}
-# wires: (from hole, to hole, label, colour, label position along the wire 0..1)
-WIRES = [
-    ((1, 15), ESP_PIN["3V3"], "VCC -> 3V3", "#d33", 0.5),
-    ((1, 14), ESP_PIN["GND"], "GND", "#222", 0.5),
-    ((1, 16), ESP_PIN["GPIO7"], "SCL -> GPIO7", "#2a2", 0.72),
-    ((1, 17), ESP_PIN["GPIO6"], "SDA -> GPIO6", "#36c", 0.45),
-    ((5, 10), ESP_PIN["GPIO4"], "DOWN -> GPIO4", "#a3c", 0.5),
-    ((5, 12), ESP_PIN["GND"], "GND", "#222", 0.5),
-    ((12, 10), ESP_PIN["GPIO3"], "UP -> GPIO3", "#c73", 0.5),
-    ((12, 12), ESP_PIN["GND"], "GND", "#222", 0.5),
+ESP32_LEFT = ["5V", "GND", "3V3", "GPIO4", "GPIO3", "GPIO2", "GPIO1", "GPIO0"]
+ESP32_RIGHT = ["GPIO5", "GPIO6", "GPIO7", "GPIO8", "GPIO9", "GPIO10", "GPIO20", "GPIO21"]
+_P = pin_map(ESP32_LEFT, ESP32_RIGHT)
+# wires: (from hole, to hole, label, colour, label position along the wire 0..1
+# [, label overrides: dx / dy nudge + ax.text kwargs])
+ESP32_WIRES = [
+    ((1, 15), _P["3V3"], "VCC -> 3V3", "#d33", 0.5),
+    ((1, 14), _P["GND"], "GND", "#222", 0.5),
+    ((1, 16), _P["GPIO7"], "SCL -> GPIO7", "#2a2", 0.72),
+    ((1, 17), _P["GPIO6"], "SDA -> GPIO6", "#36c", 0.45),
+    ((5, 10), _P["GPIO4"], "DOWN -> GPIO4", "#a3c", 0.5),
+    ((5, 12), _P["GND"], "GND", "#222", 0.5),
+    ((12, 10), _P["GPIO3"], "UP -> GPIO3", "#c73", 0.5),
+    ((12, 12), _P["GND"], "GND", "#222", 0.5),
+]
+
+# Waveshare RP2040-Zero, same frame: rows 0..8 (9 pins a side; Waveshare
+# drawing + STEP), MIRRORED against the Super Mini — power is on col 9. The
+# five far-edge pads GP9..GP13 land on row 8, cols 4..8: leave them unpopulated
+# (the -M variant's factory header there crowds the SCL wire). Pins from the
+# exhaustive crossing-free wire search: UP GP26, DOWN GP8, OLED on I2C1 (SDA
+# GP14, SCL GP15). The OLED GND hops to the left tact's GND leg (2,12), which
+# runs on to GND (9,1) — the star point with TP4056 OUT-. Tact leg pairing
+# (legs on one row joined) is inferred from the working ESP32 build: beep it.
+ZERO_LEFT = ["GP0", "GP1", "GP2", "GP3", "GP4", "GP5", "GP6", "GP7", "GP8"]
+ZERO_RIGHT = ["5V", "GND", "3V3", "GP29", "GP28", "GP27", "GP26", "GP15", "GP14"]
+_P = pin_map(ZERO_LEFT, ZERO_RIGHT)
+ZERO_WIRES = [
+    ((1, 15), _P["3V3"], "VCC -> 3V3", "#d33", 0.63),  # off the left tact's pins
+    ((1, 14), (2, 12), "GND", "#222", 0.5),
+    ((1, 16), _P["GP15"], "SCL -> GP15", "#2a2", 0.6),
+    ((1, 17), _P["GP14"], "SDA -> GP14", "#36c", 0.4),
+    # a 5.7 mm hop: the label goes level, left of it, between rows 8 and 9
+    ((2, 10), _P["GP8"], "DOWN -> GP8", "#a3c", 0.5,
+     dict(dx=-1.4, dy=-1.6, rotation=0.0, ha="right", va="center")),
+    ((2, 12), _P["GND"], "GND", "#222", 0.5),
+    ((12, 10), _P["GP26"], "UP -> GP26", "#c73", 0.5),
+    ((15, 12), _P["GND"], "GND", "#222", 0.5),
 ]
 
 
@@ -151,7 +184,8 @@ def render_layout(out_path):
             x, y = g.hole(col, r)
             ax.add_patch(Circle((x, y), 0.7, fc="#ffd", ec="#333", lw=1.0))
             ax.text(x + dx, y, n, ha=ha, va="center", fontsize=6.5, fontweight="bold")
-    ax.text(g.ESP_X, boxes["esp32-usb"][1] - 1.0, "ESP32-C3 Super Mini (USB-C pokes through the wall)",
+    # below the column numbers even when the port ends inside the board outline
+    ax.text(g.ESP_X, min(boxes["esp32-usb"][1], -hl - 1.6) - 1.0, TEXT["module"],
             ha="center", va="top", fontsize=7, color="#333")
     # tact switches: body + 4 pins (cols 2/5 and 12/15, rows 10/12)
     for side, cols, name in (("left", (2, 5), "DOWN (-)"), ("right", (12, 15), "UP (+)")):
@@ -174,13 +208,18 @@ def render_layout(out_path):
     x, y = g.hole(1, OLED_ROWS[-1])
     ax.text(x, y + 1.6, "OLED header\n(check order)", ha="left", va="bottom", fontsize=6, color="#248")
     # wires
-    for a, b, label, color, f in WIRES:
+    for a, b, label, color, f, *opt in WIRES:
         (x0, y0), (x1, y1) = g.hole(*a), g.hole(*b)
         ax.plot([x0, x1], [y0, y1], color=color, lw=1.6, alpha=0.8, solid_capstyle="round")
         if label != "GND":
-            ax.text(x0 + f * (x1 - x0), y0 + f * (y1 - y0) + 0.6, label, fontsize=6, color=color,
-                    ha="center", va="bottom", rotation=np.degrees(np.arctan2(y1 - y0, x1 - x0)),
-                    bbox=dict(fc="white", ec="none", alpha=0.7, pad=0.5))
+            x, y = x0 + f * (x1 - x0), y0 + f * (y1 - y0) + 0.6
+            kw = dict(ha="center", va="bottom", rotation=np.degrees(np.arctan2(y1 - y0, x1 - x0)))
+            if opt:  # optional 6th field: label nudge dx/dy + text overrides
+                o = dict(opt[0])
+                x, y = x + o.pop("dx", 0.0), y + o.pop("dy", 0.0)
+                kw.update(o)
+            ax.text(x, y, label, fontsize=6, color=color,
+                    bbox=dict(fc="white", ec="none", alpha=0.7, pad=0.5), **kw)
     # off-board power stubs (to the X+ edge; the TP4056 + switch live under the board)
     for pin, label in (("5V", "5V <- switch <- TP4056 OUT+"), ("GND", "GND <- TP4056 OUT-")):
         x, y = g.hole(*ESP_PIN[pin])
@@ -193,7 +232,7 @@ def render_layout(out_path):
     ax.set_ylabel("Y (mm) — Y+ = display end")
     ax.set_title(f"Perfboard layout — {g.PCB_W:.0f} x {g.PCB_L:.0f} mm single-sided board, "
                  f"{g.PCB_COLS} x {g.PCB_ROWS} holes (Özdisan 5x5 perfboard, used whole).\n"
-                 "GND wires black. ESP32 pin names: verify against your board's silkscreen", fontsize=9)
+                 + TEXT["layout_note"], fontsize=9)
     ax.text(-hw, -hl - 5.5, f"Özdisan 5x5 perfboard: {g.PCB_URL}", fontsize=6, color="#777", va="top")
     ax.grid(alpha=0.15)
     fig.patch.set_facecolor("white")
@@ -204,7 +243,7 @@ def render_layout(out_path):
 
 
 # block schematic: id -> (label, x, y, w, h, [(pin, side, frac)...]); frac runs 0..1 along the side
-BLOCKS = {
+ESP32_BLOCKS = {
     "Battery": ("Battery\n503450 LiPo", 2, 22, 14, 14, [("+", "r", 0.7), ("-", "r", 0.3)]),
     "TP4056": ("TP4056\nUSB-C charger", 24, 20, 18, 18, [("B+", "l", 0.72), ("B-", "l", 0.28),
                                                ("OUT+", "r", 0.72), ("OUT-", "r", 0.28),
@@ -219,7 +258,7 @@ BLOCKS = {
     "UP (+)": ("UP (+)", 96, 28, 10, 7, [("a", "l", 0.5), ("b", "r", 0.5)]),
     "DOWN (-)": ("DOWN (-)", 96, 14, 10, 7, [("a", "l", 0.5), ("b", "r", 0.5)]),
 }
-LINKS = [  # (block.pin, block.pin, colour)
+ESP32_LINKS = [  # (block.pin, block.pin, colour)
     ("Battery.+", "TP4056.B+", "#d33"), ("Battery.-", "TP4056.B-", "#222"),
     ("TP4056.OUT+", "Slide switch.in", "#d33"), ("Slide switch.out", "ESP32-C3.5V", "#d33"),
     ("TP4056.OUT-", "ESP32-C3.GND", "#222"),
@@ -227,6 +266,67 @@ LINKS = [  # (block.pin, block.pin, colour)
     ("ESP32-C3.GPIO7 SCL", "OLED.SCL", "#2a2"), ("ESP32-C3.GPIO6 SDA", "OLED.SDA", "#36c"),
     ("ESP32-C3.GPIO3", "UP (+).a", "#c73"), ("ESP32-C3.GPIO4", "DOWN (-).a", "#a3c"),
 ]
+# the RP2040-Zero's: same blocks, the module swapped in place (same box, same pin slots)
+ZERO_MODULE = ("RP2040-Zero\nWaveshare", 70, 12, 18, 34,
+               [("5V", "l", 0.92), ("GND", "l", 0.78), ("3V3", "l", 0.60), ("GP14 SDA", "l", 0.46),
+                ("GP15 SCL", "l", 0.34), ("GP26", "r", 0.40), ("GP8", "r", 0.20), ("USB-C", "b", 0.5)])
+ZERO_BLOCKS = {("RP2040-Zero" if k == "ESP32-C3" else k): (ZERO_MODULE if k == "ESP32-C3" else v)
+               for k, v in ESP32_BLOCKS.items()}
+ZERO_LINKS = [
+    ("Battery.+", "TP4056.B+", "#d33"), ("Battery.-", "TP4056.B-", "#222"),
+    ("TP4056.OUT+", "Slide switch.in", "#d33"), ("Slide switch.out", "RP2040-Zero.5V", "#d33"),
+    ("TP4056.OUT-", "RP2040-Zero.GND", "#222"),
+    ("RP2040-Zero.3V3", "OLED.VCC", "#d33"), ("RP2040-Zero.GND", "OLED.GND", "#222"),
+    ("RP2040-Zero.GP15 SCL", "OLED.SCL", "#2a2"), ("RP2040-Zero.GP14 SDA", "OLED.SDA", "#36c"),
+    ("RP2040-Zero.GP26", "UP (+).a", "#c73"), ("RP2040-Zero.GP8", "DOWN (-).a", "#a3c"),
+]
+
+# everything that differs per --mcu; use_module() copies one entry into the
+# module globals the render functions read (ESP_LEFT, ESP_PIN, WIRES, ...)
+MODULES = {
+    "esp32-c3": dict(
+        left=ESP32_LEFT, right=ESP32_RIGHT, wires=ESP32_WIRES, blocks=ESP32_BLOCKS,
+        links=ESP32_LINKS, docs="",
+        text=dict(
+            module="ESP32-C3 Super Mini (USB-C pokes through the wall)",
+            layout_note="GND wires black. ESP32 pin names: verify against your board's silkscreen",
+            usb="USB-C: flash / debug\n(5V pin = VBUS!)",
+            summary="Power: Battery -> TP4056 B+/B- ; OUT+ -> switch -> ESP32 5V ; OUT- -> GND\n"
+                    "Signals: 3V3/GND/GPIO6 SDA/GPIO7 SCL -> OLED ; GPIO3 (UP) and GPIO4 (DOWN) -> "
+                    "buttons -> GND (internal pull-ups)",
+            warning="WARNING: switch OFF before plugging the ESP32's own USB-C — its 5V pin is "
+                    "wired straight to USB VBUS,\nso with the switch ON the PC's 5 V would back-feed "
+                    "the TP4056 output.",
+            title="Tally counter wiring")),
+    "rp2040-zero": dict(
+        left=ZERO_LEFT, right=ZERO_RIGHT, wires=ZERO_WIRES, blocks=ZERO_BLOCKS,
+        links=ZERO_LINKS, docs="rp2040-zero",
+        text=dict(
+            module="RP2040-Zero (USB-C reaches the open end window)",
+            layout_note="GND wires black. RP2040-Zero pin names: verify against your board's "
+                        "silkscreen (power is on col 9).\nLeave the GP9..GP13 far-edge pads "
+                        "unpopulated: buy the plain Zero, not the -M with its 5-pin header",
+            usb="USB-C: flash (UF2) / debug\n(5V pin = VBUS!)",
+            summary="Power: Battery -> TP4056 B+/B- ; OUT+ -> switch -> RP2040-Zero 5V ; OUT- -> GND\n"
+                    "Signals: 3V3/GND/GP14 SDA/GP15 SCL (I2C1) -> OLED ; GP26 (UP) and GP8 (DOWN) -> "
+                    "buttons -> GND (internal pull-ups)",
+            warning="WARNING: switch OFF before plugging the Zero's own USB-C — its 5V pin IS USB "
+                    "VBUS (no diode, no fuse),\nso with the switch ON the PC's 5 V would back-feed "
+                    "the TP4056 output and the cell.",
+            title="Tally counter wiring — RP2040-Zero variant")),
+}
+
+
+def use_module(mcu):
+    global ESP_LEFT, ESP_RIGHT, ESP_PIN, WIRES, BLOCKS, LINKS, TEXT, DOCS
+    m = MODULES[mcu]
+    ESP_LEFT, ESP_RIGHT, WIRES = m["left"], m["right"], m["wires"]
+    ESP_PIN = pin_map(ESP_LEFT, ESP_RIGHT)
+    BLOCKS, LINKS, TEXT = m["blocks"], m["links"], m["text"]
+    DOCS = os.path.join(ROOT, "docs", *([m["docs"]] if m["docs"] else []))
+
+
+use_module(g.MCU)
 
 
 def render_wiring(out_path):
@@ -251,20 +351,16 @@ def render_wiring(out_path):
         x, y = pins[f"{btn}.b"]
         ax.plot([x, x + 3, x + 3], [y, y, 10], color="#222", lw=1.8, alpha=0.85)
     ax.text(pins["UP (+).b"][0] + 3, 9, "GND", ha="center", va="top", fontsize=7)
-    ax.text(79, 6, "USB-C: flash / debug\n(5V pin = VBUS!)", ha="center", va="top", fontsize=7, color="#a00")
+    ax.text(79, 6, TEXT["usb"], ha="center", va="top", fontsize=7, color="#a00")
     ax.text(33, 16, "USB-C: charge", ha="center", va="top", fontsize=7)
-    ax.text(55, 49, "Power: Battery -> TP4056 B+/B- ; OUT+ -> switch -> ESP32 5V ; OUT- -> GND\n"
-            "Signals: 3V3/GND/GPIO6 SDA/GPIO7 SCL -> OLED ; GPIO3 (UP) and GPIO4 (DOWN) -> "
-            "buttons -> GND (internal pull-ups)", ha="center", va="bottom", fontsize=8)
-    ax.text(55, -6, "WARNING: switch OFF before plugging the ESP32's own USB-C — its 5V pin is "
-            "wired straight to USB VBUS,\nso with the switch ON the PC's 5 V would back-feed "
-            "the TP4056 output.", ha="center", va="center", fontsize=8.5, fontweight="bold",
+    ax.text(55, 49, TEXT["summary"], ha="center", va="bottom", fontsize=8)
+    ax.text(55, -6, TEXT["warning"], ha="center", va="center", fontsize=8.5, fontweight="bold",
             color="#a00", bbox=dict(boxstyle="round,pad=0.6", fc="#fff3f3", ec="#a00", lw=1.5))
     ax.set_xlim(-2, 112)
     ax.set_ylim(-12, 56)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    ax.set_title("Tally counter wiring", fontsize=11)
+    ax.set_title(TEXT["title"], fontsize=11)
     fig.patch.set_facecolor("white")
     plt.tight_layout()
     plt.savefig(out_path, bbox_inches="tight")
@@ -274,6 +370,7 @@ def render_wiring(out_path):
 
 def main():
     g.apply_printer_args()
+    use_module(g.MCU)
     os.makedirs(DOCS, exist_ok=True)
     render_case(os.path.join(DOCS, "renders.png"))
     render_layout(os.path.join(DOCS, "perfboard-layout.png"))
