@@ -333,7 +333,7 @@ make plain-test   # the shared state machine: prints OK
 make rp2040       # -> firmware/rp2040/build/tally-rp2040.uf2
 ```
 
-Result: RAM 3.9 % (10.1 KB), Flash 4.2 % (84.9 KB of 2 MB), UF2 190 KiB. The
+Result: RAM 3.9 % (10.1 KB), Flash 4.2 % (85.0 KB of 2 MB), UF2 190 KiB. The
 behaviour matches the plain build; what differs underneath:
 
 - **Pins**: UP GP26 and DOWN GP8, with internal pull-ups enabled in code (RP2040
@@ -351,8 +351,11 @@ behaviour matches the plain build; what differs underneath:
     would erase and rewrite one sector per save and could lose the whole count.
   - A save counts only if the value reads back (Arduino-Pico's `close()` hides
     littlefs errors). A failed save stays pending and is retried 2 s later, up
-    to 3 times per burst; sleep waits for those tries, then goes ahead rather
-    than drain the cell (the burst is lost, as with a power cut).
+    to 3 times per burst; sleep waits for those tries. If all three fail, the
+    count is parked in two watchdog scratch registers, which survive DORMANT and
+    the wake reboot, and the next boot takes it back and saves it again, so the
+    counter still sleeps instead of draining the cell. Only a power cut or the
+    RESET button in that state loses the burst, as with any unsaved click.
   - The very first boot formats the partition, so that boot blinks about 0.7 s
     longer, once.
   - UF2 updates leave the partition alone. Changing `filesystem_size` moves it,
@@ -372,8 +375,9 @@ behaviour matches the plain build; what differs underneath:
   (≈0.3 s, on every boot and wake). A blink with a dark OLED means the MCU runs;
   an LED that stays lit means `setup()` hung.
 - **Serial banner**: the USB serial port prints
-  `boot reset=<getResetReason> wake=<0|1>` and `count=N (restored)` at boot, then
-  `count=N` per click.
+  `boot reset=<getResetReason> wake=<0|1>` and `count=N (restored)` at boot
+  (`(unsaved, kept over sleep)` when it came back from the scratch registers
+  after failed saves), then `count=N` per click.
   - `reset=3 wake=1`: woke from a button. The wake reboot counts as a soft reset,
     and `wake` comes from a watchdog scratch register.
   - `reset=1 wake=0`: switched on with the slide switch.

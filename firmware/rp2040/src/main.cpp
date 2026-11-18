@@ -23,6 +23,9 @@ constexpr uint32_t IDLE_SLEEP_MS = 30000;
 // Watchdog scratch[0] = "this boot is a dormant wake": survives the watchdog reboot, cleared by power-on/RUN.
 // The bootrom and the SDK use only scratch[4..7].
 constexpr uint32_t WAKE_MAGIC = 0x7a11d0e5u;
+// Watchdog scratch[1..2] = a count whose save never landed, carried across the wake reboot (RAM is not); same
+// lifetime as scratch[0]. [2] = [1] ^ STASH_MAGIC, so the zeroed power-on state and stale values never match.
+constexpr uint32_t STASH_MAGIC = 0x5a7ec0deu;
 #ifndef SAVE_DELAY_MS
 #define SAVE_DELAY_MS 2000  // see platformio.ini build_flags
 #endif
@@ -161,10 +164,14 @@ static void armWake(uint pin) {
 
 static void sleepNow() {
   if (!save_failures) flush(millis());  // the ordinary pending save; flash writes need the normal clocks
-  // DORMANT ends in a reboot, which drops RAM: with a failed save still retrying (loop(), every SAVE_DELAY_MS),
-  // stay awake; once the tries are spent, sleep anyway (losing the burst, as a power cut would) — staying up
-  // for good would drain the cell
+  // A failed save with tries left (loop(), every SAVE_DELAY_MS): stay awake for them.
   if (save.dirty && save_failures < SAVE_TRIES) return;
+  // Tries spent: DORMANT ends in a reboot that drops RAM, and staying awake on a broken filesystem would drain
+  // the cell, so the count rides the reboot in watchdog scratch; setup() takes it back and saves it again.
+  if (save.dirty) {
+    watchdog_hw->scratch[1] = static_cast<uint32_t>(tally.count);
+    watchdog_hw->scratch[2] = static_cast<uint32_t>(tally.count) ^ STASH_MAGIC;
+  }
   u8g2.setPowerSave(1);  // blocking I2C, done before clk_sys/clk_peri change
   pixel.clear();
   pixel.show();          // already dark since setup(); re-latched black for certainty
@@ -184,7 +191,14 @@ void setup() {
   pinMode(BTN_UP, INPUT_PULLUP);  // RP2040 pads come out of reset with the pull-DOWN on
   pinMode(BTN_DOWN, INPUT_PULLUP);
   tally.count = loadCount();
-  Serial.printf("count=%ld (restored)\n", (long)tally.count);
+  const uint32_t stash = watchdog_hw->scratch[1];
+  const bool stashed = watchdog_hw->scratch[2] == (stash ^ STASH_MAGIC) && stash <= uint32_t(Tally::MAX);
+  watchdog_hw->scratch[1] = watchdog_hw->scratch[2] = 0;
+  if (stashed) {  // newer than the file: its save failed before the last sleep
+    tally.count = static_cast<int32_t>(stash);
+    save.touch(millis());  // still unsaved: written by the normal rule, SAVE_DELAY_MS from now
+  }
+  Serial.printf("count=%ld (%s)\n", (long)tally.count, stashed ? "unsaved, kept over sleep" : "restored");
   Wire1.setSDA(OLED_SDA);  // before begin(): a non-I2C1 pin, or a change after begin(), panics
   Wire1.setSCL(OLED_SCL);
   u8g2.setBusClock(400000);  // a full frame takes ~50 ms at the 100 kHz default and would starve button polling

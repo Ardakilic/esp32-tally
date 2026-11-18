@@ -101,8 +101,8 @@ Expected results: verify `verify (esp32-c3): 105 checks — ALL PASS` (70 with
 `--snap-bite 0`, 101 with `--omit-engraving`) and `verify (rp2040-zero): 104 checks —
 ALL PASS` (69 / 100; one fewer: its three thin-wall/recess checks become two);
 plain RAM 4.6 % / Flash 25.5 %, factory bin 407 KiB (416640 bytes);
-rp2040 RAM 3.9 % (10096 of 262144 B) / Flash 4.2 % (84904 of 2027520 B), firmware.bin
-96936 bytes, uf2 190 KiB (194048 bytes), no warnings;
+rp2040 RAM 3.9 % (10096 of 262144 B) / Flash 4.2 % (85016 of 2027520 B), firmware.bin
+97048 bytes, uf2 190 KiB (194560 bytes), no warnings;
 ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
 
 ## Technology decisions (and why)
@@ -158,7 +158,8 @@ ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
   `delay(1)`, `noInterrupts()`, arm both pins, clk_ref → XOSC, clk_sys → clk_ref, stop
   clk_usb/adc/rtc, clk_peri from clk_sys, `pll_deinit` both (DORMANT doesn't halt PLLs),
   save + disable ROSC CTRL, `xosc_dormant()`; on wake restore ROSC CTRL + wait STABLE,
-  `watchdog_hw->scratch[0] = 0x7a11d0e5` (wake flag; bootrom/SDK use only scratch[4..7]),
+  `watchdog_hw->scratch[0] = 0x7a11d0e5` (wake flag; scratch[1..2] = the unsaved-count
+  stash; bootrom/SDK use only scratch[4..7], the core none),
   `rp2040.reboot()`. **Level wake, not edge**: `armWake()` clears all four dormant
   enables, then arms `GPIO_IRQ_LEVEL_LOW` on a released (high) pin or `LEVEL_HIGH` on a
   held/stuck one (datasheet 2.11.3: level or edge). Levels aren't latched (2.19.3), so no
@@ -491,8 +492,12 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   (LittleFS open `"r+"` + write + close = one commit; `"w"` only creates the file), also first thing in `sleepNow()`.
   `File::close()` drops littlefs's return code, so `storeCount()` reads the value back and
   `dirty` clears only on a match; a failed save is retried `SAVE_DELAY_MS` later, `SAVE_TRIES`
-  (3) per burst (a click resets them), and `sleepNow()` stays awake while tries remain, then
-  sleeps anyway (losing the burst, like a power cut) rather than drain the cell.
+  (3) per burst (a click resets them), and `sleepNow()` stays awake while tries remain. Tries
+  spent: it parks the count in `watchdog_hw->scratch[1]` with `scratch[2] = [1] ^ 0x5a7ec0de`
+  (survive DORMANT + the watchdog reboot; POR/RUN clear them) and sleeps; `setup()` takes a
+  valid stash (≤ MAX) over the file, clears it, `save.touch()`es it (banner `(unsaved, kept
+  over sleep)`). So a failed save never costs counts without power loss, and a broken FS
+  never keeps the chip awake.
 - **I2C 400 kHz** on all three builds: plain and RP2040 `setBusClock`, ESPHome
   `i2c: frequency: 400kHz` (default 50 kHz ≈ 90 ms/frame), so a click's redraw blocks
   the loop less. OLED misbehaving at 400 kHz on esp-idf → try `i2c: timeout: 10ms`
