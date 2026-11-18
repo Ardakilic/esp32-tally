@@ -101,8 +101,8 @@ Expected results: verify `verify (esp32-c3): 105 checks — ALL PASS` (70 with
 `--snap-bite 0`, 101 with `--omit-engraving`) and `verify (rp2040-zero): 104 checks —
 ALL PASS` (69 / 100; one fewer: its three thin-wall/recess checks become two);
 plain RAM 4.6 % / Flash 25.5 %, factory bin 407 KiB (416640 bytes);
-rp2040 RAM 3.8 % (10092 of 262144 B) / Flash 4.2 % (84696 of 2027520 B), firmware.bin
-96728 bytes, uf2 189 KiB (193536 bytes), no warnings;
+rp2040 RAM 3.9 % (10096 of 262144 B) / Flash 4.2 % (84904 of 2027520 B), firmware.bin
+96936 bytes, uf2 190 KiB (194048 bytes), no warnings;
 ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
 
 ## Technology decisions (and why)
@@ -447,8 +447,10 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   `render_docs.py`): the Makefile passes the same variable to all three scripts.
   `ENGRAVING=` / `OMIT_ENGRAVING=1` are appended with **`override GEN_ARGS +=`** —
   a plain `+=` is silently ignored when GEN_ARGS is given on the command line.
-  The `case-verify` recipe wraps its pip + verify in a single-quoted `sh -c '...'`
-  so a multi-word `--engraving "My Text"` survives the shell.
+  The `case-verify` recipe runs pip + both verify passes in one `sh -c '...'` and
+  hands `$(GEN_ARGS)` to it as positional args (`sh -c '... "$$@" ...' sh $(GEN_ARGS)`),
+  so the host shell parses them as in `case`: a multi-word `--engraving "My Text"`
+  survives, and so does an apostrophe (inside the quoted script it would end it).
 - The engraving font lives in the **case image** (`fonts-liberation`, see
   `case/Dockerfile`); `generate.py` `p.error`s if `ENGRAVE_FONT` is missing, so
   run it through `make`. `make vendor` uses the bare `python:3.14-slim` image,
@@ -487,6 +489,10 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   the last click, 60 s of clicks at 1.5 s gaps → none then one, millis wrap, delay 0,
   flush before sleep. RP2040: the same `SaveDelay`; `flush()` → `storeCount()`
   (LittleFS open `"r+"` + write + close = one commit; `"w"` only creates the file), also first thing in `sleepNow()`.
+  `File::close()` drops littlefs's return code, so `storeCount()` reads the value back and
+  `dirty` clears only on a match; a failed save is retried `SAVE_DELAY_MS` later, `SAVE_TRIES`
+  (3) per burst (a click resets them), and `sleepNow()` stays awake while tries remain, then
+  sleeps anyway (losing the burst, like a power cut) rather than drain the cell.
 - **I2C 400 kHz** on all three builds: plain and RP2040 `setBusClock`, ESPHome
   `i2c: frequency: 400kHz` (default 50 kHz ≈ 90 ms/frame), so a click's redraw blocks
   the loop less. OLED misbehaving at 400 kHz on esp-idf → try `i2c: timeout: 10ms`

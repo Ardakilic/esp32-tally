@@ -333,7 +333,7 @@ make plain-test   # the shared state machine: prints OK
 make rp2040       # -> firmware/rp2040/build/tally-rp2040.uf2
 ```
 
-Result: RAM 3.8 % (10.1 KB), Flash 4.2 % (84.7 KB of 2 MB), UF2 189 KiB. The
+Result: RAM 3.9 % (10.1 KB), Flash 4.2 % (84.9 KB of 2 MB), UF2 190 KiB. The
 behaviour matches the plain build; what differs underneath:
 
 - **Pins**: UP GP26 and DOWN GP8, with internal pull-ups enabled in code (RP2040
@@ -349,6 +349,10 @@ behaviour matches the plain build; what differs underneath:
     with `"w"` would first commit an empty file, so the firmware doesn't use it
     once the file exists. Arduino-Pico's EEPROM emulation
     would erase and rewrite one sector per save and could lose the whole count.
+  - A save counts only if the value reads back (Arduino-Pico's `close()` hides
+    littlefs errors). A failed save stays pending and is retried 2 s later, up
+    to 3 times per burst; sleep waits for those tries, then goes ahead rather
+    than drain the cell (the burst is lost, as with a power cut).
   - The very first boot formats the partition, so that boot blinks about 0.7 s
     longer, once.
   - UF2 updates leave the partition alone. Changing `filesystem_size` moves it,

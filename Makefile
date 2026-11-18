@@ -70,11 +70,13 @@ case: image-case
 	$(RUN_CASE) python3 tools/render_docs.py $(GEN_ARGS) --mcu esp32-c3
 
 # the ray-cast extras go into the throwaway container only, never the image;
-# both modules are verified (the second runs even if the first fails)
+# both modules are verified (the second runs even if the first fails).
+# GEN_ARGS goes in as sh's positional args ("$$@"), parsed by the host shell
+# exactly as in `case`: inside the quoted script an apostrophe would end it
 case-verify: image-case
 	$(RUN_CASE) sh -c 'pip install -q --root-user-action=ignore \
-		-r requirements-dev.txt && { python3 tools/verify.py $(GEN_ARGS) --mcu esp32-c3; s=$$?; \
-		python3 tools/verify.py $(GEN_ARGS) --mcu rp2040-zero || s=1; exit $$s; }'
+		-r requirements-dev.txt && { python3 tools/verify.py "$$@" --mcu esp32-c3; s=$$?; \
+		python3 tools/verify.py "$$@" --mcu rp2040-zero || s=1; exit $$s; }' sh $(GEN_ARGS)
 
 # stdlib-only fetcher, so the bare image does (vendor/ is committed)
 vendor:

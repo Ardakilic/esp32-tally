@@ -84,18 +84,37 @@ static int32_t loadCount() {
   return (v >= 0 && v <= Tally::MAX) ? v : 0;
 }
 
-static void storeCount(int32_t c) {
+// True only if c reads back: File::close() (the commit) drops littlefs's return code, so read-back is the only
+// way to learn that the save landed.
+static bool storeCount(int32_t c) {
   File f = LittleFS.open("/count", "r+");     // no truncate: nothing reaches flash until close() commits
   if (!f) f = LittleFS.open("/count", "w");  // first save only: creates the file (an empty one reads back as 0)
-  if (!f) return;
-  f.write(reinterpret_cast<const uint8_t *>(&c), sizeof c);
+  if (!f) return false;
+  bool ok = f.write(reinterpret_cast<const uint8_t *>(&c), sizeof c) == sizeof c;
   f.close();
+  int32_t v = -1;
+  File r = LittleFS.open("/count", "r");
+  if (r) {
+    ok = ok && r.read(reinterpret_cast<uint8_t *>(&v), sizeof v) == sizeof v;
+    r.close();
+  }
+  return ok && v == c;
 }
 
-static void flush() {
-  if (!save.dirty) return;
-  storeCount(tally.count);
-  save.dirty = false;
+// A failed save keeps the count pending and is retried SAVE_DELAY_MS later, SAVE_TRIES attempts per burst (a new
+// click starts over): bounded, so a broken filesystem cannot keep the chip awake or grind the flash.
+constexpr int SAVE_TRIES = 3;
+static int save_failures = 0;
+
+static void flush(uint32_t now) {
+  if (!save.dirty || save_failures >= SAVE_TRIES) return;
+  if (storeCount(tally.count)) {
+    save.dirty = false;
+    save_failures = 0;
+  } else {
+    save.touch(now);
+    Serial.printf("save failed (%d/%d)\n", ++save_failures, SAVE_TRIES);
+  }
 }
 
 // Wake source per pin, chosen from its level now: a released (high) pin wakes on LEVEL_LOW (its press), a
@@ -141,7 +160,11 @@ static void armWake(uint pin) {
 }
 
 static void sleepNow() {
-  flush();               // flash writes need the normal clocks
+  if (!save_failures) flush(millis());  // the ordinary pending save; flash writes need the normal clocks
+  // DORMANT ends in a reboot, which drops RAM: with a failed save still retrying (loop(), every SAVE_DELAY_MS),
+  // stay awake; once the tries are spent, sleep anyway (losing the burst, as a power cut would) — staying up
+  // for good would drain the cell
+  if (save.dirty && save_failures < SAVE_TRIES) return;
   u8g2.setPowerSave(1);  // blocking I2C, done before clk_sys/clk_peri change
   pixel.clear();
   pixel.show();          // already dark since setup(); re-latched black for certainty
@@ -183,9 +206,10 @@ void loop() {
     // Deferred: written SAVE_DELAY_MS after the last change so a burst of clicks is one flash write;
     // sleepNow() flushes first, so DORMANT never loses a pending count.
     save.touch(now);
+    save_failures = 0;  // a new burst gets fresh save attempts
     Serial.printf("count=%ld\n", (long)tally.count);
   }
-  if (save.due(now, SAVE_DELAY_MS)) flush();
+  if (save.due(now, SAVE_DELAY_MS)) flush(now);
   if (now - tally.last_activity_ms >= IDLE_SLEEP_MS) sleepNow();
   delay(5);
 }
