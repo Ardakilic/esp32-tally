@@ -97,7 +97,8 @@ jobs:
             gh release upload latest --clobber \
               dist/tally-plain.factory.bin dist/tally-rp2040.uf2 dist/tally-esphome.factory.bin dist/tally-esphome.ota.bin
             gh release edit latest --title "Latest firmware (main)" --notes-file /tmp/notes.md
-            gh api repos/${{ github.repository }}/git/refs/tags/latest -X PATCH -f sha="$GITHUB_SHA" -f force=true --jq .ref
+            # -F, not -f: the refs API wants `force` as a JSON boolean, and -f sends the string "true" (HTTP 422)
+            gh api repos/${{ github.repository }}/git/refs/tags/latest -X PATCH -f sha="$GITHUB_SHA" -F force=true --jq .ref
           else
             gh release create latest --target "$GITHUB_SHA" --title "Latest firmware (main)" --notes-file /tmp/notes.md \
               dist/tally-plain.factory.bin dist/tally-rp2040.uf2 dist/tally-esphome.factory.bin dist/tally-esphome.ota.bin
