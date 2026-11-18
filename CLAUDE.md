@@ -592,7 +592,7 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   (`--snap-bite`, `--clear-friction`, the PLA 0.3 guess), OLED window offset
   `OLED_AA_DX`, engraving legibility, the ESPHome variant (untested on hardware,
   incl. the 1.5 s wake guard), the brew-label layout (labels one per line right of
-  the digits) and 400 kHz I2C (both builds, untested on hardware; the stacked
+  the digits) and 400 kHz I2C (both ESP32 builds, untested on hardware; the stacked
   digits-over-label layout was rejected by Arda on 2026-10-11 as cramped), and the
   100 mAh cell needs R_PROG ≥ 12 kΩ (default 1.2 kΩ = 1 A).
 - RP2040-Zero variant (added 2026-11-18 on branch `rp2040-zero`): **untested on

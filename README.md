@@ -254,7 +254,7 @@ images.
 | File | Role |
 |---|---|
 | [`platformio.ini`](firmware/plain/platformio.ini) | platform / board / U8g2 pins, `build_flags` (`SAVE_DELAY_MS`, `-I ../common`) |
-| [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine and the save-delay rule (`struct SaveDelay`) — pure C++, no Arduino |
+| [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine and the save-delay rule (`struct SaveDelay`) — pure C++, no Arduino; the RP2040-Zero build compiles the same file (`-I ../plain/src`) |
 | [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED (big count with the matching brew methods stacked to its right, redrawn only on a click), NVS (`Preferences`, flushed when `SaveDelay` is due and before sleep), deep sleep, boot blink + serial banner |
 | [`../common/grind_chart.h`](firmware/common/grind_chart.h) | brew-method table `GRIND_CHART`, `GRIND_MAX_LINES` (4) and `grind_matches()`, shared with the ESPHome and RP2040 builds |
 | [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine, the save delay (burst → one write, 1.5 s gaps → none, `millis` wrap, delay 0, flush before sleep) and the grind chart (table sanity, match oracle over counts 0…100, the line cap, one shipped-table spot check), runs on the host in `gcc:14` |
@@ -798,7 +798,7 @@ order they'd bite:
 - The ESPHome **`millis() > 1500` wake-press guard** (the press that woke the chip
   is already ON at boot; its release must not count) — margin chosen by reasoning,
   not measured boot time.
-- **Brew-label layout and 400 kHz I2C** (both builds, 2026-10-11) — the pixel rows
+- **Brew-label layout and 400 kHz I2C** (ESP32 builds 2026-10-11, RP2040-Zero build 2026-11-18) — the pixel rows
   of the digits and the stacked names come from a host render of U8g2, not the
   panel; whether every OLED module takes 400 kHz is untested (ESPHome: try
   `i2c: timeout: 10ms` first).
