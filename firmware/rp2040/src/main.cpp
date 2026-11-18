@@ -23,10 +23,12 @@ constexpr uint32_t IDLE_SLEEP_MS = 30000;
 // Watchdog scratch[0] = "this boot is a dormant wake": survives the watchdog reboot, cleared by power-on/RUN.
 // The bootrom and the SDK use only scratch[4..7].
 constexpr uint32_t WAKE_MAGIC = 0x7a11d0e5u;
-// Watchdog scratch[1..2] = the count while it is unsaved: written on every change, cleared only once a save has
-// landed, so the wake reboot (or any other soft reset) cannot drop it. Power-on/RUN clear them, like the RAM.
-// [2] = [1] ^ STASH_MAGIC, so the zeroed power-on state and stale values never match.
-constexpr uint32_t STASH_MAGIC = 0x5a7ec0deu;
+// Watchdog scratch[1] = the count while it is unsaved: written on every change, cleared only once a save has
+// landed, so the wake reboot (or any other soft reset) cannot drop it. Power-on/RUN clear it, like the RAM.
+// One word, STASH_TAG in bits 31..17 + the count in bits 16..0: a single 32-bit store is atomic on the M0+, so
+// a reset can never catch half an update, and the zeroed power-on value never carries the tag.
+constexpr uint32_t STASH_COUNT_BITS = 0x1ffffu, STASH_TAG = 0x5a7e0000u;
+static_assert(Tally::MAX <= int32_t(STASH_COUNT_BITS) && !(STASH_TAG & STASH_COUNT_BITS), "count must fit below the tag");
 #ifndef SAVE_DELAY_MS
 #define SAVE_DELAY_MS 2000  // see platformio.ini build_flags
 #endif
@@ -110,17 +112,14 @@ static bool storeCount(int32_t c) {
 constexpr int SAVE_TRIES = 3;
 static int save_failures = 0;
 
-static void stash(int32_t c) {
-  watchdog_hw->scratch[1] = static_cast<uint32_t>(c);
-  watchdog_hw->scratch[2] = static_cast<uint32_t>(c) ^ STASH_MAGIC;
-}
+static void stash(int32_t c) { watchdog_hw->scratch[1] = STASH_TAG | static_cast<uint32_t>(c); }
 
 static void flush(uint32_t now) {
   if (!save.dirty || save_failures >= SAVE_TRIES) return;
   if (storeCount(tally.count)) {
     save.dirty = false;
     save_failures = 0;
-    watchdog_hw->scratch[1] = watchdog_hw->scratch[2] = 0;  // the file has it now
+    watchdog_hw->scratch[1] = 0;  // the file has it now
   } else {
     save.touch(now);
     Serial.printf("save failed (%d/%d)\n", ++save_failures, SAVE_TRIES);
@@ -196,9 +195,10 @@ void setup() {
   pinMode(BTN_DOWN, INPUT_PULLUP);
   tally.count = loadCount();
   const uint32_t parked = watchdog_hw->scratch[1];
-  const bool stashed = watchdog_hw->scratch[2] == (parked ^ STASH_MAGIC) && parked <= uint32_t(Tally::MAX);
+  const bool stashed =
+      (parked & ~STASH_COUNT_BITS) == STASH_TAG && (parked & STASH_COUNT_BITS) <= uint32_t(Tally::MAX);
   if (stashed) {  // newer than the file (its save never landed); the stash stays until flush() succeeds
-    tally.count = static_cast<int32_t>(parked);
+    tally.count = static_cast<int32_t>(parked & STASH_COUNT_BITS);
     save.touch(millis());  // still unsaved: written by the normal rule, SAVE_DELAY_MS from now
   }
   Serial.printf("count=%ld (%s)\n", (long)tally.count, stashed ? "unsaved, kept over sleep" : "restored");

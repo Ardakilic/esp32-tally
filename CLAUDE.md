@@ -158,7 +158,7 @@ ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
   `delay(1)`, `noInterrupts()`, arm both pins, clk_ref → XOSC, clk_sys → clk_ref, stop
   clk_usb/adc/rtc, clk_peri from clk_sys, `pll_deinit` both (DORMANT doesn't halt PLLs),
   save + disable ROSC CTRL, `xosc_dormant()`; on wake restore ROSC CTRL + wait STABLE,
-  `watchdog_hw->scratch[0] = 0x7a11d0e5` (wake flag; scratch[1..2] = the unsaved-count
+  `watchdog_hw->scratch[0] = 0x7a11d0e5` (wake flag; scratch[1] = the unsaved-count
   stash; bootrom/SDK use only scratch[4..7], the core none),
   `rp2040.reboot()`. **Level wake, not edge**: `armWake()` clears all four dormant
   enables, then arms `GPIO_IRQ_LEVEL_LOW` on a released (high) pin or `LEVEL_HIGH` on a
@@ -494,8 +494,10 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   `dirty` clears only on a match; a failed save is retried `SAVE_DELAY_MS` later, `SAVE_TRIES`
   (3) per burst (a click resets them), and `sleepNow()` stays awake while tries remain, then
   sleeps anyway. Unsaved-count stash: every count change `stash()`es it in
-  `watchdog_hw->scratch[1]` with `scratch[2] = [1] ^ 0x5a7ec0de` (survive DORMANT, the watchdog
-  reboot and any soft reset; POR/RUN clear them); only a successful `flush()` clears it.
+  `watchdog_hw->scratch[1]` as ONE word, `STASH_TAG` 0x5a7e0000 in bits 31..17 | count in
+  16..0 (MAX 99999 < 2^17, static_assert): a single 32-bit store is atomic, so no reset can catch a
+  half-written pair (the earlier two-register form could). Survives DORMANT, the watchdog reboot
+  and any soft reset; POR/RUN zero it (no tag). Only a successful `flush()` clears it (`= 0`).
   `setup()` takes a valid stash (≤ MAX) over the file and `save.touch()`es it, keeping the stash
   until the save lands (banner `(unsaved, kept over sleep)`). Sleeping with a failed save is
   **on purpose** (CodeRabbit asked for "no sleep while unsaved"): awake on a broken FS the cell

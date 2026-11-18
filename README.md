@@ -352,8 +352,9 @@ behaviour matches the plain build; what differs underneath:
   - A save counts only if the value reads back (Arduino-Pico's `close()` hides
     littlefs errors). A failed save stays pending and is retried 2 s later, up
     to 3 times per burst; sleep waits for those tries.
-  - Until a save lands, the count is also kept in two watchdog scratch
-    registers, which survive DORMANT, the wake reboot and any other soft reset.
+  - Until a save lands, the count is also kept in a watchdog scratch register
+    (one word with a validity tag, so it is updated atomically), which survives
+    DORMANT, the wake reboot and any other soft reset.
     If all three tries fail, the counter sleeps anyway, and the next boot takes
     the count back and saves it again. Staying awake would not protect it: on a
     filesystem that keeps failing, the cell would reach the TP4056's cut-off
