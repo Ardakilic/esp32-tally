@@ -36,9 +36,10 @@
 <main>
   <div class="top">
     <h1><span>ESP32 Tally Counter</span> — pocket tally counter</h1>
-    <p class="tagline">Two buttons, a 0.91" OLED, an ESP32-C3 Super Mini and a
-      1000 mAh LiPo in a 58 × 58 × 22 mm 3D-printed case.
-      Plain and ESPHome firmwares. Open source, generated from one script.</p>
+    <p class="tagline">Two buttons, a 0.91" OLED, an ESP32-C3 Super Mini (or an RP2040-Zero
+      on the same holes) and a 1000 mAh LiPo in a 58 × 58 × 22 mm
+      3D-printed case. Plain and ESPHome firmwares, plain only on the RP2040. Open source,
+      generated from one script.</p>
     <p><a href="https://github.com/Ardakilic/esp32-tally">Source, build guide &amp; README on GitHub</a></p>
   </div>
   <div class="grid">
@@ -56,7 +57,7 @@
          alt="Perfboard layout with every component, pin name and wire"></a>
     <h2>Build it</h2>
     <p class="geo">50 × 50 mm single-sided perfboard (18 × 19 holes) ·
-       ESP32-C3 Super Mini · SSD1306 128 × 32 · TP4056 · 503450 LiPo</p>
+       ESP32-C3 Super Mini or RP2040-Zero · SSD1306 128 × 32 · TP4056 · 503450 LiPo</p>
     <ul class="links">
       <li><a href="case/docs/perfboard-layout.png">Perfboard layout</a>
           (<a href="https://www.ozdisan.com/p/prototipleme-devreleri-621/ozd-arduino-delkl-pertnaks-5x5-643014">Özdisan 5x5 perfboard</a>)</li>
@@ -68,16 +69,31 @@
     <a href="case/docs/wiring.png"><img loading="lazy" src="case/docs/wiring.png"
          alt="Wiring block schematic: power path and signals"></a>
     <h2>Firmware</h2>
-    <p class="geo">Same behaviour in both: click counts on release, hold both to
+    <p class="geo">Same behaviour in all three: click counts on release, hold both to
        reset, 30 s idle → deep sleep, count kept in flash</p>
     <p><a class="btn" href="https://github.com/Ardakilic/esp32-tally/releases/download/latest/tally-plain.factory.bin">Plain .bin</a>
-       <a class="btn" href="https://github.com/Ardakilic/esp32-tally/releases/download/latest/tally-esphome.factory.bin">ESPHome .bin</a></p>
+       <a class="btn" href="https://github.com/Ardakilic/esp32-tally/releases/download/latest/tally-esphome.factory.bin">ESPHome .bin</a>
+       <a class="btn" href="https://github.com/Ardakilic/esp32-tally/releases/download/latest/tally-rp2040.uf2">RP2040 .uf2</a></p>
     <ul class="links">
       <li><a href="https://github.com/Ardakilic/esp32-tally/releases">Latest release</a> — prebuilt binaries, also as OTA (.ota.bin)</li>
       <li><a href="https://github.com/Ardakilic/esp32-tally/tree/main/firmware/plain">firmware/plain/</a> — PlatformIO + Arduino, no radio</li>
       <li><a href="https://github.com/Ardakilic/esp32-tally/tree/main/firmware/esphome">firmware/esphome/</a> — ESPHome, Home Assistant entities</li>
+      <li><a href="https://github.com/Ardakilic/esp32-tally/tree/main/firmware/rp2040">firmware/rp2040/</a> — PlatformIO + Arduino-Pico, no radio</li>
       <li><a href="https://github.com/Ardakilic/esp32-tally#flashing">Flashing from the browser (README)</a></li>
     </ul>
+  </article>
+  <article>
+    <a href="case/docs/rp2040-zero/renders.png"><img loading="lazy" src="case/docs/rp2040-zero/renders.png"
+         alt="Renders of the RP2040-Zero variant of the case, closed and exploded"></a>
+    <h2>RP2040-Zero variant</h2>
+    <p class="geo">Waveshare RP2040-Zero on the same perfboard holes · same
+       58.0 × 57.6 × 22.1 mm case and caps · its USB-C in an
+       open end window · no radio</p>
+    <ul class="links">
+      <li><a href="case/docs/rp2040-zero/perfboard-layout.png">Perfboard layout</a></li>
+      <li><a href="case/docs/rp2040-zero/wiring.png">Wiring block schematic</a></li>
+    </ul>
+    <details open><summary>STL downloads (base + lid; the caps above fit)</summary><ul><li><a href="case/stl/rp2040-zero/tally-base.stl">rp2040-zero/tally-base.stl</a> (33 kB)</li><li><a href="case/stl/rp2040-zero/tally-lid.stl">rp2040-zero/tally-lid.stl</a> (121 kB)</li></ul></details>
   </article>
   </div>
   <footer>Code: MIT · Models &amp; images: CC BY 4.0 ·

@@ -13,6 +13,11 @@ verified the same way it is generated:
   ... python3 tools/verify.py --clear-friction 0.32 --tact-height 4.3
   ... python3 tools/verify.py --omit-engraving
   ... python3 tools/verify.py --snap-bite 0      (plain friction lid, no detents)
+  ... python3 tools/verify.py --mcu rp2040-zero  (the RP2040-Zero variant)
+
+With USB_WALL_T 0 (the RP2040-Zero's open end relief) the three thin-wall /
+recess checks of the module's USB-C become two: nothing of base or lid in front
+of the receptacle face, and a PLUG_OVERMOLD envelope reaching 0.05 short of it.
 
 Needs the ray-cast extras on top of requirements.txt — see requirements-dev.txt
 (the documented verify command installs them into a throwaway container).
@@ -37,6 +42,11 @@ import generate as g  # noqa: E402  (has a __main__ guard — importing is free)
 TOL = 0.01      # mm — fit dimensions must hit their constant this closely
 BBOX_TOL = 1.0  # mm — outer bounding boxes vs the expected envelope
 EPS = 0.05      # mm — shrink ghost boxes so touching faces don't count as inside
+# mm — ASSUMED plug overmold envelope (W x H) for an open relief (USB_WALL_T 0):
+# no USB-IF maximum was found; the Type-C spec (R1.3 Fig 3-73) wants a seated
+# plug's overmold >= 0.05 off the receptacle face, hence the 0.05 gap below
+PLUG_OVERMOLD = (12.0, 6.4)
+PLUG_GAP = 0.05
 
 
 class Report:
@@ -136,7 +146,8 @@ def verify():
     rep.at_least("ledge X >= LEDGE_MIN", (g.CAV_W - g.OPEN_W) / 2, g.LEDGE_MIN)
     rep.at_least("ledge Y >= LEDGE_MIN", (g.CAV_L - g.OPEN_L) / 2, g.LEDGE_MIN)
     rep.at_least("lid clears the OLED cover", g.LID_CLEAR, g.OLED_COVER_TOP + 0.3)
-    rep.at_least("lid clears the ESP32 USB-C", g.LID_CLEAR,
+    usb = f"{g.MCU_SHORT} USB-C"  # "ESP32 USB-C" for the default module
+    rep.at_least(f"lid clears the {usb}", g.LID_CLEAR,
                  g.ESP_STANDOFF + g.ESP_PCB_T + g.ESP_USB_H + 0.3)
 
     parts = {name: g.build(name) for name in g.PARTS}
@@ -154,25 +165,47 @@ def verify():
         rep.near(f"outer {axis}", extents(base)["XYZ".index(axis)], want, tol=BBOX_TOL)
     # USB-C openings: a ray along +Y at each receptacle centre must cross
     # nothing inside the Y- wall (the first thing it may hit is the far wall)
-    usb = {"ESP32 USB-C": (boxes["esp32-usb"], -g.OPEN_L / 2),
-           "TP4056 USB-C": (boxes["tp4056-usb"], -g.CAV_L / 2)}
-    for name, (b, inner_face) in usb.items():
+    ports = {usb: (boxes["esp32-usb"], -g.OPEN_L / 2),
+             "TP4056 USB-C": (boxes["tp4056-usb"], -g.CAV_L / 2)}
+    for name, (b, inner_face) in ports.items():
         c = ((b[0] + b[3]) / 2, (b[2] + b[5]) / 2)
         h = hits(base, (c[0], -g.OUT_L / 2 - 5.0, c[1]), (0.0, 1.0, 0.0))
         in_wall = h[h[:, 1] < inner_face + 0.1] if len(h) else h
         rep.check(f"{name} opening clear through the Y- wall", len(in_wall) == 0,
                   f"{len(in_wall)} surfaces hit inside the wall")
-    # ESP32 USB-C plug relief: beside the slot, a ray along +Y crosses the thin
-    # wall (relief face -> inner clearance pocket); the receptacle face must
-    # sit at most 0.3 mm behind the relief face a plug butts against
     b = boxes["esp32-usb"]
-    h = hits(base, (g.ESP_X + g.USB_CUT_W / 2 + 1.0, -g.OUT_L / 2 - 5.0, (b[2] + b[5]) / 2),
-             (0.0, 1.0, 0.0))
-    ys = sorted(h[:, 1]) if len(h) > 1 else [-g.OUT_L / 2, -g.OPEN_L / 2]
-    rep.at_least("ESP32 USB-C wall beside the slot >= 1.2", ys[1] - ys[0], 1.2)
-    rep.near("ESP32 USB-C wall = USB_WALL_T", ys[1] - ys[0], g.USB_WALL_T)
-    rep.check("ESP32 USB-C face recess <= 0.3 behind the relief face", -0.05 <= b[1] - ys[0] <= 0.3,
-              f"{b[1] - ys[0]:.2f} mm (derived ESP_USB_RECESS {g.ESP_USB_RECESS:.2f})")
+    if g.USB_WALL_T > 0:
+        # module USB-C plug relief: beside the slot, a ray along +Y crosses the
+        # thin wall (relief face -> inner clearance pocket); the receptacle face
+        # must sit at most 0.3 mm behind the relief face a plug butts against
+        h = hits(base, (g.ESP_X + g.USB_CUT_W / 2 + 1.0, -g.OUT_L / 2 - 5.0, (b[2] + b[5]) / 2),
+                 (0.0, 1.0, 0.0))
+        ys = sorted(h[:, 1]) if len(h) > 1 else [-g.OUT_L / 2, -g.OPEN_L / 2]
+        rep.at_least(f"{usb} wall beside the slot >= 1.2", ys[1] - ys[0], 1.2)
+        rep.near(f"{usb} wall = USB_WALL_T", ys[1] - ys[0], g.USB_WALL_T)
+        rep.check(f"{usb} face recess <= 0.3 behind the relief face", -0.05 <= b[1] - ys[0] <= 0.3,
+                  f"{b[1] - ys[0]:.2f} mm (derived ESP_USB_RECESS {g.ESP_USB_RECESS:.2f})")
+    else:
+        # open relief: the receptacle is the plug stop. Rays along +Y over the
+        # whole face (5 x 5 grid, inset EPS) must meet no base or lid surface
+        # before reaching it, and an overmold envelope from outside to PLUG_GAP
+        # short of the face, centred on the port, must overlap neither part
+        grid = [(x, z) for x in np.linspace(b[0] + EPS, b[3] - EPS, 5)
+                for z in np.linspace(b[2] + EPS, b[5] - EPS, 5)]
+        front = 0
+        for part in (base, lid):
+            for x, z in grid:
+                h = hits(part, (x, -g.OUT_L / 2 - 5.0, z), (0.0, 1.0, 0.0))
+                front += int((h[:, 1] < b[1]).sum()) if len(h) else 0
+        rep.check(f"{usb} face: no base/lid material in front of it (plug axis)", front == 0,
+                  f"{front} surfaces hit in front of the face at Y {b[1]:.2f} "
+                  f"({-g.ESP_USB_RECESS:.2f} past the frame's inner face)")
+        (ow, oh), zc = PLUG_OVERMOLD, (b[2] + b[5]) / 2
+        plug = g.bbox(g.ESP_X - ow / 2, -g.OUT_L / 2 - 10.0, zc - oh / 2,
+                      g.ESP_X + ow / 2, b[1] - PLUG_GAP, zc + oh / 2)
+        v = overlap(base, plug) + overlap(lid, plug)
+        rep.check(f"{ow:g} x {oh:g} plug overmold (assumed) reaches {PLUG_GAP:g} short of the face",
+                  v < 1e-6, f"{v:.3f} mm3 overlap with base + lid")
     h = hits(base, (g.OUT_W / 2 + 5.0, g.SW_Y, g.FLOOR + g.SW_H / 2), (-1.0, 0.0, 0.0))
     in_wall = h[h[:, 0] > g.CAV_W / 2 - 0.1] if len(h) else h
     rep.check("switch slot clear through the X+ wall", len(in_wall) == 0,
@@ -326,7 +359,7 @@ def verify():
                   f"Z {gz[0]:.2f} vs PCB top {g.PCB_TOP:.2f}")
         rep.at_least(f"{side} seated: bump Z {bz[0]:.2f}..{bz[1]:.2f} inside groove Z "
                      f"{gz[0]:.2f}..{gz[1]:.2f} by >= 0.15", min(bz[0] - gz[0], gz[1] - bz[1]), 0.15)
-        if n[1] < 0:  # the Y- wall carries the ESP32 USB-C relief and the skirt notch
+        if n[1] < 0:  # the Y- wall carries the module's USB-C relief and the skirt notch
             notch = g.ESP_X + g.SKIRT_NOTCH_W / 2
             rep.at_least("Y- groove clear of the USB relief by >= 1", g_lo - notch, 1.0)
             rep.at_least("Y- bump clear of the skirt notch by >= 1", b_lo - notch, 1.0)
@@ -344,6 +377,7 @@ def main(argv=None):
     missing = [m for m in ("rtree", "scipy", "networkx") if importlib.util.find_spec(m) is None]
     if missing:
         sys.exit(f"verify.py needs {', '.join(missing)}: pip install -r requirements-dev.txt")
+    print(f"module — {g.MCU_NAME} (--mcu {g.MCU})")
     print(f"tolerances — {g.tolerance_summary()}")
     print(f"shell — {g.shell_summary()}\n")
     started = time.time()
@@ -356,7 +390,7 @@ def main(argv=None):
         print(f"  {scope:12s} {'FAIL' if bad else 'PASS'}  {len(mine) - len(bad)}/{len(mine)}")
         for _, name, ok, detail in (mine if opts.verbose else bad):
             print(f"      {'ok  ' if ok else 'FAIL'} {name}" + (f" — {detail}" if detail else ""))
-    print(f"\nverify: {len(rows)} checks — {'ALL PASS' if not failed else f'{failed} FAILED'} "
+    print(f"\nverify ({g.MCU}): {len(rows)} checks — {'ALL PASS' if not failed else f'{failed} FAILED'} "
           f"({time.time() - started:.0f} s)")
     return 1 if failed else 0
 

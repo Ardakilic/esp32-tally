@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Tally case — 3D-printed enclosure for the ESP32-C3 Super Mini tally counter.
+Tally case — 3D-printed enclosure for the ESP32-C3 Super Mini tally counter
+(or, with --mcu rp2040-zero, the Waveshare RP2040-Zero on the same holes).
 
 Four print-ready STLs for a two-part case plus two button caps:
 
@@ -18,7 +19,13 @@ plus two generated web pages (committed, never hand-edited — filtarr style):
                            + ghost electronics, base64 STLs, three.js inlined
                            from vendor/ (`make vendor` fetches it)
   ../index.html            GitHub Pages landing page linking the preview,
-                           the STLs, the docs images and the firmware folders
+                           the STLs (both modules), the docs images and the
+                           firmware folders
+
+--mcu rp2040-zero writes only stl/rp2040-zero/tally-base.stl and tally-lid.stl
+(its caps are byte-identical to the ones above) and no web pages; run it before
+the default pass so index.html can list the variant's file sizes (the Makefile
+does; without them the links just carry no size).
 
 World frame: X = width (left/right as held), Y = length (Y- = bottom end with
 both USB-C ports, Y+ = top end with the display), Z up, Z = 0 = outer bottom
@@ -32,8 +39,9 @@ the lid from below -> lid. Print the base upright, the lid upside-down on its
 top face, the caps upright on their flanges; no supports needed.
 
 Usage:
-  python3 generate.py [--clear-friction MM] [--snap-bite MM] [--tact-height MM]
-                      [--battery WxLxT] [--engraving TEXT | --omit-engraving]
+  python3 generate.py [--mcu esp32-c3|rp2040-zero] [--clear-friction MM]
+                      [--snap-bite MM] [--tact-height MM] [--battery WxLxT]
+                      [--engraving TEXT | --omit-engraving]
 
 Fit tolerances are CLI flags (defaults below), so they can be tuned per
 printer/kit without editing code — via Docker: see the repo README.
@@ -95,7 +103,9 @@ TP_USB_OVERHANG = 1.0  # receptacle beyond the PCB short edge
 TP_POCKET = 1.0        # the PCB's USB end sinks this far into the Y- wall, so the
                        # receptacle face ends up flush with the outer face
 
-# ESP32-C3 Super Mini on male headers, USB at Y-
+# MCU module on male headers, USB at Y-, pin rows in cols 3 and 9 from row 0
+# (--mcu). The ESP_* names describe the SELECTED module: the values below are
+# the ESP32-C3 Super Mini's, MCUS overrides the ones that differ per module.
 ESP_W, ESP_L = 18.0, 22.5
 ESP_PIN_ROW_GAP = 15.24  # 6 pitches between the two pin rows
 ESP_PIN_END = 2.36     # first pin centre to the USB short edge
@@ -103,7 +113,31 @@ ESP_USB_OVERHANG = 1.5  # receptacle beyond the PCB edge
 ESP_USB_W, ESP_USB_H = 9.0, 3.2
 ESP_STANDOFF = 2.54    # male-header plastic spacer between perfboard and module
 ESP_PCB_T = 1.0
-USB_WALL_T = 1.4       # wall left in front of the ESP32's USB-C by the plug relief
+USB_WALL_T = 1.4       # wall left in front of the module's USB-C by the plug relief
+                       # (0 = the relief opens straight through to the frame opening)
+MCU = "esp32-c3"
+MCU_NAME, MCU_SHORT = "ESP32-C3 Super Mini", "ESP32"
+MCUS = {
+    "esp32-c3": dict(MCU_NAME="ESP32-C3 Super Mini", MCU_SHORT="ESP32", ESP_L=22.5,
+                     ESP_PIN_END=2.36, ESP_USB_OVERHANG=1.5, ESP_USB_W=9.0, ESP_USB_H=3.2,
+                     ESP_PCB_T=1.0, USB_WALL_T=1.4),
+    # Waveshare RP2040-Zero: 18 x 23.5, 9 pins a side 15.24 apart, first pin
+    # centre 1.59 from the USB edge (dimension drawing; STEP 1.60), PCB 1.09
+    # (STEP; no source states it), USB-C 8.94 wide, top 3.25 above the PCB,
+    # overhanging 1.21 (STEP). Its PCB ends 0.85 inside the frame opening (no
+    # wall pocket), and the port face lands at Y -25.66 (-25.67 with the STEP's
+    # 1.60): 0.36 PAST the frame's inner face (-25.3) and 1.06 further in than
+    # the ESP32's (-26.72). No wall can stay in front of it — a recess <= 0.3
+    # would need a wall <= 0.66 mm, a printable >= 1.2 wall a 0.84 recess that
+    # keeps a plug from seating — so USB_WALL_T 0: the outer plug relief opens
+    # straight through to the opening over SKIRT_NOTCH_W above PCB_TOP + 2, the
+    # lid plate notch ends at -OPEN_L / 2, and the receptacle itself is the plug
+    # stop (an open 19 x 7.5 mm end window).
+    "rp2040-zero": dict(MCU_NAME="Waveshare RP2040-Zero", MCU_SHORT="RP2040-Zero", ESP_L=23.5,
+                        ESP_PIN_END=1.59, ESP_USB_OVERHANG=1.21, ESP_USB_W=8.94, ESP_USB_H=3.25,
+                        ESP_PCB_T=1.09, USB_WALL_T=0.0),
+}
+VARIANT_PARTS = ("base", "lid")  # all a non-default --mcu writes: the caps are module-independent
 
 # 0.91" 128x32 OLED on a 1x4 header along Y at its X- short end
 OLED_W, OLED_L = 38.0, 12.0
@@ -123,7 +157,7 @@ SW_RIB_T, SW_RIB_D = 1.2, 4.5         # the two ribs that trap the body
 
 # Stack heights
 LID_CLEAR = 7.5        # lid underside above the perfboard top: clears the OLED cover
-                       # (6.9) and the ESP32's USB-C (6.74)
+                       # (6.9) and the module's USB-C (ESP32 6.74, RP2040-Zero 6.88)
 PCB_Z = 9.0            # perfboard underside above the inner floor: battery 6 + 2.5
                        # solder-side clearance, rounded
 
@@ -192,13 +226,16 @@ def derive():
     TP_X = TP_X0 + TP_W / 2
     TP_Y0 = -CAV_L / 2 - TP_POCKET
     RIB_X = (BAT_X0 + BAT_W + TP_X0) / 2
-    # ESP32: pin rows in cols 3 and 9, rows 0..7, USB at Y-. Row 0 sits 2.14 mm
-    # from the board edge, so the module's PCB just reaches the frame wall (a
-    # shallow clearance pocket in the wall's inner face, 0.3 like the TP4056's)
-    # and its USB-C face would sit ~2 mm inside a full-thickness wall — too deep
-    # for a plug. So the wall's OUTER face gets a plug relief (SKIRT_NOTCH_W wide,
+    # MCU module: pin rows in cols 3 and 9 from row 0 (ESP32 rows 0..7,
+    # RP2040-Zero 0..8), USB at Y-. Row 0 sits 2.14 mm from the board edge, so
+    # the ESP32's PCB just reaches the frame wall (a shallow clearance pocket in
+    # the wall's inner face, 0.3 like the TP4056's; the Zero needs none) and its
+    # USB-C face would sit ~2 mm inside a full-thickness wall — too deep for a
+    # plug. So the wall's OUTER face gets a plug relief (SKIRT_NOTCH_W wide,
     # from PCB_TOP + 2 up through the lid plate) that leaves USB_WALL_T of wall
-    # beside the USB slot: the receptacle face ends up ~flush with it.
+    # beside the USB slot: the receptacle face ends up ~flush with it. With
+    # USB_WALL_T 0 (RP2040-Zero, see MCUS) the relief face is the frame's inner
+    # face and ESP_USB_RECESS < 0: the port pokes past it into the open relief.
     ESP_X = hole(6, 0)[0]
     ESP_Y0 = hole(3, 0)[1] - ESP_PIN_END
     ESP_POCKET = max(0.0, -OPEN_L / 2 - ESP_Y0 + 0.3)
@@ -336,12 +373,16 @@ def build_base():
         bbox(ESP_X - USB_CUT_W / 2, -OUT_L / 2 - 1.0, esp_usb_z,
              ESP_X + USB_CUT_W / 2, -OPEN_L / 2 + 1.0, Z_TOP + 1.0),
         # plug relief in the wall's outer face (the lid plate is notched above
-        # it), leaving USB_WALL_T of wall around the slot
+        # it), leaving USB_WALL_T of wall around the slot; with USB_WALL_T 0 it
+        # opens straight through, 1 mm into the opening (no face coplanar with
+        # the frame cutter's)
         bbox(ESP_X - SKIRT_NOTCH_W / 2, -OUT_L / 2 - 1.0, PCB_TOP + 2.0,
-             ESP_X + SKIRT_NOTCH_W / 2, USB_RELIEF_Y, Z_TOP + 1.0),
+             ESP_X + SKIRT_NOTCH_W / 2, USB_RELIEF_Y if USB_WALL_T > 0 else -OPEN_L / 2 + 1.0,
+             Z_TOP + 1.0),
         # clearance pocket in the frame's inner face for the module PCB's edge
+        # (none when the module ends inside the opening, ESP_POCKET 0)
         bbox(ESP_X - SKIRT_NOTCH_W / 2, -OPEN_L / 2 - ESP_POCKET, PCB_TOP + ESP_STANDOFF - 0.5,
-             ESP_X + SKIRT_NOTCH_W / 2, -OPEN_L / 2 + 1.0, Z_TOP + 1.0),
+             ESP_X + SKIRT_NOTCH_W / 2, -OPEN_L / 2 + 1.0, Z_TOP + 1.0) if ESP_POCKET > 0 else None,
         # TP4056 USB-C through the Y- lower wall + inner-face pocket for its PCB end
         bbox(TP_X - USB_CUT_W / 2, -OUT_L / 2 - 1.0, tp_usb_z,
              TP_X + USB_CUT_W / 2, -CAV_L / 2 + 1.0, tp_usb_z + TP_USB_H + USB_CUT_PAD),
@@ -352,6 +393,7 @@ def build_base():
         # pry notch in the Y+ wall top edge, centred
         bbox(-PRY_W / 2, OPEN_L / 2 - 1.0, Z_TOP - PRY_H, PRY_W / 2, OUT_L / 2 + 1.0, Z_TOP + 1.0),
     ]
+    cutters = [c for c in cutters if c is not None]  # same list and order as before for the ESP32
     if SNAP_BITE > 0:  # lid detent grooves in the frame's inner face
         cutters += [snap_groove(n, xy) for n, xy in SNAP_SITES]
     shell = diff(solid, *cutters)
@@ -385,7 +427,8 @@ def build_lid():
         bbox(ESP_X - SKIRT_NOTCH_W / 2, -SKIRT_L / 2 - 1.0, Z_TOP - LID_CLEAR - 1.0,
              ESP_X + SKIRT_NOTCH_W / 2, -SKIRT_L / 2 + SKIRT_T + 1.0, Z_TOP),
         # plate notch over the base's USB-C plug relief, so a plug's overmold
-        # reaches the thin wall instead of stopping at the plate edge
+        # reaches the thin wall instead of stopping at the plate edge (with
+        # USB_WALL_T 0 it ends at -OPEN_L / 2, the open relief's inner end)
         bbox(ESP_X - SKIRT_NOTCH_W / 2, -OUT_L / 2 - 1.0, Z_TOP - 1.0,
              ESP_X + SKIRT_NOTCH_W / 2, USB_RELIEF_Y, Z_TOP + LID_T + 1.0),
     ] + [cyl(CAP_HOLE_D, Z_TOP - 1.0, Z_TOP + LID_T + 1.0, xy) for xy in TACT_XY]
@@ -488,8 +531,11 @@ def component_boxes():
 def apply_printer_args(argv=None):
     """Override the printer/kit-fit parameters from the command line, so parts
     can be tuned without editing code (`... generate.py --clear-friction 0.32`)."""
-    global CLEAR_FRICTION, SNAP_BITE, TACT_H, BAT_W, BAT_L, BAT_T, ENGRAVE_TEXT
+    global CLEAR_FRICTION, SNAP_BITE, TACT_H, BAT_W, BAT_L, BAT_T, ENGRAVE_TEXT, MCU
     p = argparse.ArgumentParser(description="Generate the tally case STLs.")
+    p.add_argument("--mcu", choices=tuple(MCUS), default=MCU,
+                   help=f"module on the perfboard, same holes (default {MCU}; "
+                   "rp2040-zero writes stl/rp2040-zero/ base + lid only)")
     p.add_argument("--clear-friction", type=float, default=CLEAR_FRICTION,
                    metavar="MM", help="lid skirt clearance to the frame per side "
                    f"(default {CLEAR_FRICTION}; tune in ±0.04 steps)")
@@ -535,6 +581,8 @@ def apply_printer_args(argv=None):
         p.error("--snap-bite wants >= 0 (0 = no detents)")
     CLEAR_FRICTION, SNAP_BITE, TACT_H = a.clear_friction, a.snap_bite, a.tact_height
     BAT_W, BAT_L, BAT_T = bat
+    MCU = a.mcu
+    globals().update(MCUS[MCU])  # the selected module's ESP_* / USB_WALL_T, before derive()
     derive()
     if SNAP_BITE > 0:  # the grooves must leave wall, the Y- bump must miss the skirt notch
         wall = min(OUT_W - OPEN_W, OUT_L - OPEN_L) / 2 - (SNAP_BITE + SNAP_GROOVE_CLEAR)
@@ -560,8 +608,11 @@ def shell_summary():
     return (f"walls {WALL:.1f} / floor {FLOOR:.1f} / lid {LID_T:.1f} / skirt "
             f"{SKIRT_T:.1f} mm; cavity {CAV_W:.1f} x {CAV_L:.1f}, perfboard on the "
             f"ledge at Z {Z_LEDGE:.1f}; outer {OUT_W:.1f} x {OUT_L:.1f} x "
-            f"{Z_TOP + LID_T:.1f} with lid; ESP32 USB-C behind {USB_WALL_T:.1f} mm "
-            f"of wall, recessed {ESP_USB_RECESS:.2f}")
+            f"{Z_TOP + LID_T:.1f} with lid; " + (
+                f"{MCU_SHORT} USB-C behind {USB_WALL_T:.1f} mm of wall, recessed {ESP_USB_RECESS:.2f}"
+                if USB_WALL_T > 0 else
+                f"{MCU_SHORT} USB-C in the open end relief (no wall in front), face "
+                f"{-ESP_USB_RECESS:.2f} past the frame's inner face"))
 
 
 def engraving_summary():
@@ -575,13 +626,20 @@ def main():
     apply_printer_args()
     summary = [("tolerances", tolerance_summary()), ("shell", shell_summary()),
                ("engraving", engraving_summary())]
+    print(f"module — {MCU_NAME} (--mcu {MCU})")  # console only: summary feeds preview.html
     for label, text in summary:
         print(f"{label} — {text}")
     print()
-    stl_dir = os.path.join(HERE, "stl")
+    # the default module writes all four parts + the web pages; a variant
+    # writes its own base + lid to stl/<mcu>/ (the caps do not depend on the
+    # module) and leaves preview.html / index.html to the default pass
+    variant = MCU != "esp32-c3"
+    stl_dir = os.path.join(HERE, "stl", *([MCU] if variant else []))
     os.makedirs(stl_dir, exist_ok=True)
+    if variant:
+        print(f"  stl/{MCU}/ (caps: the default ones, identical)")
     parts = {}
-    for name in PARTS:
+    for name in VARIANT_PARTS if variant else PARTS:
         mesh = parts[name] = build(name)
         assert mesh.is_watertight, f"{name} is not watertight!"
         out = print_orientation_lid(mesh) if name == "lid" else mesh.copy()
@@ -591,8 +649,9 @@ def main():
         ext = out.bounds[1] - out.bounds[0]
         print(f"  {os.path.basename(path):24s} {ext[0]:6.1f} x {ext[1]:6.1f} x "
               f"{ext[2]:5.1f} mm  {mesh.volume / 1000.0:6.1f} cm3")
-    build_preview(parts, summary)
-    build_index()
+    if not variant:
+        build_preview(parts, summary)
+        build_index()
     print("\ndone.")
 
 
@@ -666,15 +725,24 @@ def build_preview(parts, summary):
 
 def build_index():
     """Landing page (repo-root index.html) linking the preview, the STL
-    downloads, the docs images and the firmware folders — published to
-    GitHub Pages by .github/workflows/pages.yml. Needs the repo root mounted
-    (the Makefile mounts it at /app and runs in /app/case)."""
+    downloads (default module + the RP2040-Zero variant), the docs images and
+    the firmware folders — published to GitHub Pages by
+    .github/workflows/pages.yml. Needs the repo root mounted (the Makefile
+    mounts it at /app and runs in /app/case). A variant STL that is not there
+    yet (its --mcu pass has not run) is linked without a size."""
     def size(path):
         return f"{os.path.getsize(os.path.join(HERE, path)) / 1e3:.0f} kB"
+
+    def stl_item(rel):
+        full = os.path.join(HERE, "stl", rel)
+        kb = f" ({size(os.path.join('stl', rel))})" if os.path.exists(full) else ""
+        return f'<li><a href="case/stl/{rel}">{rel}</a>{kb}</li>'
 
     stls = "".join(
         f'<li><a href="case/stl/tally-{name}.stl">tally-{name}.stl</a> '
         f"({size(f'stl/tally-{name}.stl')})</li>" for name in PARTS)
+    zero = "rp2040-zero"
+    zero_stls = "".join(stl_item(f"{zero}/tally-{name}.stl") for name in VARIANT_PARTS)
     html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -713,9 +781,10 @@ def build_index():
 <main>
   <div class="top">
     <h1><span>ESP32 Tally Counter</span> — pocket tally counter</h1>
-    <p class="tagline">Two buttons, a 0.91" OLED, an ESP32-C3 Super Mini and a
-      1000 mAh LiPo in a {OUT_W:.0f} × {OUT_L:.0f} × {Z_TOP + LID_T:.0f} mm 3D-printed case.
-      Plain and ESPHome firmwares. Open source, generated from one script.</p>
+    <p class="tagline">Two buttons, a 0.91" OLED, an ESP32-C3 Super Mini (or an RP2040-Zero
+      on the same holes) and a 1000 mAh LiPo in a {OUT_W:.0f} × {OUT_L:.0f} × {Z_TOP + LID_T:.0f} mm
+      3D-printed case. Plain and ESPHome firmwares, plain only on the RP2040. Open source,
+      generated from one script.</p>
     <p><a href="{REPO_URL}">Source, build guide &amp; README on GitHub</a></p>
   </div>
   <div class="grid">
@@ -733,7 +802,7 @@ def build_index():
          alt="Perfboard layout with every component, pin name and wire"></a>
     <h2>Build it</h2>
     <p class="geo">50 × 50 mm single-sided perfboard ({PCB_COLS} × {PCB_ROWS} holes) ·
-       ESP32-C3 Super Mini · SSD1306 128 × 32 · TP4056 · 503450 LiPo</p>
+       ESP32-C3 Super Mini or RP2040-Zero · SSD1306 128 × 32 · TP4056 · 503450 LiPo</p>
     <ul class="links">
       <li><a href="case/docs/perfboard-layout.png">Perfboard layout</a>
           (<a href="{PCB_URL}">Özdisan 5x5 perfboard</a>)</li>
@@ -745,16 +814,31 @@ def build_index():
     <a href="case/docs/wiring.png"><img loading="lazy" src="case/docs/wiring.png"
          alt="Wiring block schematic: power path and signals"></a>
     <h2>Firmware</h2>
-    <p class="geo">Same behaviour in both: click counts on release, hold both to
+    <p class="geo">Same behaviour in all three: click counts on release, hold both to
        reset, 30 s idle → deep sleep, count kept in flash</p>
     <p><a class="btn" href="{REPO_URL}/releases/download/latest/tally-plain.factory.bin">Plain .bin</a>
-       <a class="btn" href="{REPO_URL}/releases/download/latest/tally-esphome.factory.bin">ESPHome .bin</a></p>
+       <a class="btn" href="{REPO_URL}/releases/download/latest/tally-esphome.factory.bin">ESPHome .bin</a>
+       <a class="btn" href="{REPO_URL}/releases/download/latest/tally-rp2040.uf2">RP2040 .uf2</a></p>
     <ul class="links">
       <li><a href="{REPO_URL}/releases">Latest release</a> — prebuilt binaries, also as OTA (.ota.bin)</li>
       <li><a href="{REPO_URL}/tree/main/firmware/plain">firmware/plain/</a> — PlatformIO + Arduino, no radio</li>
       <li><a href="{REPO_URL}/tree/main/firmware/esphome">firmware/esphome/</a> — ESPHome, Home Assistant entities</li>
+      <li><a href="{REPO_URL}/tree/main/firmware/rp2040">firmware/rp2040/</a> — PlatformIO + Arduino-Pico, no radio</li>
       <li><a href="{REPO_URL}#flashing">Flashing from the browser (README)</a></li>
     </ul>
+  </article>
+  <article>
+    <a href="case/docs/{zero}/renders.png"><img loading="lazy" src="case/docs/{zero}/renders.png"
+         alt="Renders of the RP2040-Zero variant of the case, closed and exploded"></a>
+    <h2>RP2040-Zero variant</h2>
+    <p class="geo">Waveshare RP2040-Zero on the same perfboard holes · same
+       {OUT_W:.1f} × {OUT_L:.1f} × {Z_TOP + LID_T:.1f} mm case and caps · its USB-C in an
+       open end window · no radio</p>
+    <ul class="links">
+      <li><a href="case/docs/{zero}/perfboard-layout.png">Perfboard layout</a></li>
+      <li><a href="case/docs/{zero}/wiring.png">Wiring block schematic</a></li>
+    </ul>
+    <details open><summary>STL downloads (base + lid; the caps above fit)</summary><ul>{zero_stls}</ul></details>
   </article>
   </div>
   <footer>Code: MIT · Models &amp; images: CC BY 4.0 ·

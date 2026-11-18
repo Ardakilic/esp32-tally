@@ -1,13 +1,17 @@
 # ESP32 Tally Counter — every command runs inside Docker; nothing is installed
 # on the host. Requires only Docker and make.
 #
-#   make                 # everything: case STLs + README images + both firmwares
+#   make                 # everything: case STLs + README images + all three firmwares
 #   make case            # case/stl/*.stl + case/docs/*.png + case/preview.html
-#                        # + index.html (builds the image first)
-#   make case-verify     # measure every part in memory (ray casts, sections):
-#                        # exit 1 on any failure — takes GEN_ARGS too
+#                        # + index.html, and the RP2040-Zero variant's
+#                        # case/stl/rp2040-zero/ + case/docs/rp2040-zero/
+#                        # (builds the image first)
+#   make case-verify     # measure every part in memory (ray casts, sections),
+#                        # both modules: exit 1 on any failure — takes GEN_ARGS too
 #   make plain           # PlatformIO build -> firmware/plain/build/tally-plain.factory.bin
 #   make plain-test      # host self-test of the button/count state machine (gcc:14)
+#   make rp2040          # RP2040-Zero build -> firmware/rp2040/build/tally-rp2040.uf2
+#                        # (hold BOOT, plug in, copy to the RPI-RP2 drive)
 #   make esphome         # ESPHome compile -> firmware/esphome/.esphome/build/tally/build/
 #                        # firmware.factory.bin (needs firmware/esphome/secrets.yaml)
 #   make esphome-config  # validate tally.yaml only
@@ -40,27 +44,39 @@ DEVICE        ?= tally.local
 RUN         := docker run --rm -v "$(CURDIR)":/app -w /app/case
 RUN_CASE    := $(RUN) $(IMAGE_CASE)
 RUN_PLAIN   := docker run --rm -v "$(CURDIR)":/app -w /app/firmware/plain -v $(VOL_PIO):/pio $(IMAGE_PLAIN)
+# same PlatformIO image and package volume: only the platform differs, which pio fetches per project
+RUN_RP2040  := docker run --rm -v "$(CURDIR)":/app -w /app/firmware/rp2040 -v $(VOL_PIO):/pio $(IMAGE_PLAIN)
 RUN_ESPHOME := docker run --rm -v "$(CURDIR)":/app -w /app/firmware/esphome -v $(VOL_ESPHOME):/cache $(ESPHOME_IMAGE)
 SECRETS     := firmware/esphome/secrets.yaml
 
 .PHONY: all case case-verify vendor image-case plain plain-test image-plain \
-        esphome esphome-config esphome-ota clean
+        rp2040 esphome esphome-config esphome-ota clean
 
-all: case plain esphome
+all: case plain rp2040 esphome
 
 # ---- case ------------------------------------------------------------------
 
 image-case:
 	docker build -t $(IMAGE_CASE) case
 
+# one pass per module, the same GEN_ARGS each, the --mcu flag last (it wins
+# over one in GEN_ARGS). The RP2040-Zero pass (stl/rp2040-zero/ base + lid,
+# docs/rp2040-zero/) runs first, so the default pass's index.html can list
+# the variant STL sizes; only the default pass writes preview.html + index.html
 case: image-case
-	$(RUN_CASE) python3 generate.py $(GEN_ARGS)
-	$(RUN_CASE) python3 tools/render_docs.py $(GEN_ARGS)
+	$(RUN_CASE) python3 generate.py $(GEN_ARGS) --mcu rp2040-zero
+	$(RUN_CASE) python3 tools/render_docs.py $(GEN_ARGS) --mcu rp2040-zero
+	$(RUN_CASE) python3 generate.py $(GEN_ARGS) --mcu esp32-c3
+	$(RUN_CASE) python3 tools/render_docs.py $(GEN_ARGS) --mcu esp32-c3
 
-# the ray-cast extras go into the throwaway container only, never the image
+# the ray-cast extras go into the throwaway container only, never the image;
+# both modules are verified (the second runs even if the first fails).
+# GEN_ARGS goes in as sh's positional args ("$$@"), parsed by the host shell
+# exactly as in `case`: inside the quoted script an apostrophe would end it
 case-verify: image-case
 	$(RUN_CASE) sh -c 'pip install -q --root-user-action=ignore \
-		-r requirements-dev.txt && python3 tools/verify.py $(GEN_ARGS)'
+		-r requirements-dev.txt && { python3 tools/verify.py "$$@" --mcu esp32-c3; s=$$?; \
+		python3 tools/verify.py "$$@" --mcu rp2040-zero || s=1; exit $$s; }' sh $(GEN_ARGS)
 
 # stdlib-only fetcher, so the bare image does (vendor/ is committed)
 vendor:
@@ -82,6 +98,15 @@ plain-test:
 	docker run --rm -v "$(CURDIR)/firmware":/work -w /work/plain $(GCC_IMAGE) sh -c \
 		'g++ -std=c++17 -Wall -Wextra -Werror -Isrc -I../common test/tally_logic_test.cpp -o /tmp/t && /tmp/t'
 
+# ---- RP2040-Zero firmware (PlatformIO, Arduino-Pico, no network) -----------
+
+# every pio run emits firmware.uf2 (picotool uf2 convert) next to the .elf;
+# it shares tally_logic.h with the plain build, so plain-test covers its logic
+rp2040: image-plain
+	$(RUN_RP2040) pio run
+	$(RUN_RP2040) sh -c 'mkdir -p build && cp .pio/build/zero/firmware.uf2 build/tally-rp2040.uf2'
+	@echo "-> firmware/rp2040/build/tally-rp2040.uf2"
+
 # ---- ESPHome firmware (Home Assistant) -------------------------------------
 
 $(SECRETS):
@@ -100,5 +125,6 @@ esphome-ota: $(SECRETS)
 	$(RUN_ESPHOME) run tally.yaml --device $(DEVICE)
 
 clean:
-	rm -rf case/stl case/docs firmware/plain/.pio firmware/plain/build firmware/esphome/.esphome
+	rm -rf case/stl case/docs firmware/plain/.pio firmware/plain/build firmware/esphome/.esphome \
+	       firmware/rp2040/.pio firmware/rp2040/build
 	rm -f case/preview.html index.html

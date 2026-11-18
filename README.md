@@ -5,9 +5,12 @@ A pocket tally counter: two buttons, a 0.91" OLED, an ESP32-C3 Super Mini and a
 counts down, hold both for a second to reset. The count survives power-off, the
 device deep-sleeps after 30 s and wakes on any button, and a slide switch cuts
 power completely. Two firmwares share the same hardware: a **plain** one with no
-radio, and an **ESPHome** one that exposes the count to Home Assistant. Everything
-— the case STLs, the README images, both firmware binaries — is generated from
-source through Docker + `make`; nothing is installed on the host.
+radio, and an **ESPHome** one that exposes the count to Home Assistant. A
+**Waveshare RP2040-Zero** fits the same perfboard holes as a variant, with its
+own case base and lid and a third, plain firmware that behaves the same way
+([RP2040-Zero variant](#rp2040-zero-variant)). Everything — the case STLs, the
+README images, all three firmware binaries — is generated from source through
+Docker + `make`; nothing is installed on the host.
 
 ![Tally counter case — closed and exploded](case/docs/renders.png)
 *Closed (58.0 × 57.6 × 22.1 mm, both USB-C ports at the near end, "Grindarr"
@@ -26,19 +29,19 @@ as ghosts.*
   keeps its big digits, and every method whose click range contains it is listed one
   per line to its right, in table order (7 → "Turkish" over "Espresso"), up to four;
   nothing when no range matches. The table is
-  [`firmware/common/grind_chart.h`](firmware/common/grind_chart.h), shared by both
-  firmwares; an empty table turns the labels off
+  [`firmware/common/grind_chart.h`](firmware/common/grind_chart.h), shared by all
+  three firmwares; an empty table turns the labels off
   ([Brew-method labels](#brew-method-labels-grind-chart)).
-- Count **saved to flash once per burst, on both firmwares**: every click restarts a
+- Count **saved to flash once per burst, on every firmware**: every click restarts a
   2 s timer, clicking with gaps under 2 s never writes, and the pause after the last
   click writes the final count once. Going to sleep writes a pending count first; a
   power cut (slide switch off) during a burst or within 2 s of the last click loses the
-  clicks since the previous write. Plain: `SAVE_DELAY_MS` in
-  `firmware/plain/platformio.ini` `build_flags` (0 = every click). ESPHome: the
-  `save_delay` substitution, used by the restart-mode `save_later` script, with
-  `flash_write_interval: never`.
-- **30 s idle → OLED off + deep sleep**; either button wakes it (that press is not
-  counted). Slide switch = hard power off.
+  clicks since the previous write. Plain and RP2040: `SAVE_DELAY_MS` in
+  `firmware/plain/platformio.ini` / `firmware/rp2040/platformio.ini` `build_flags`
+  (0 = every click). ESPHome: the `save_delay` substitution, used by the
+  restart-mode `save_later` script, with `flash_write_interval: never`.
+- **30 s idle → OLED off + deep sleep** (DORMANT on the RP2040); either button wakes
+  it (that press is not counted). Slide switch = hard power off.
 - **Charging over USB-C** through a TP4056 module with cell protection; the ESP32's
   own USB-C is for flashing only and sits behind the lid (see [Power notes](#power-notes)).
 - ESPHome variant adds Home Assistant entities: number **Tally Count** (settable),
@@ -46,6 +49,12 @@ as ghosts.*
 - Case: snap-fit lid (four detents, bite tunable with [`--snap-bite`](#fit-tuning),
   `0` = plain friction fit), no screws, no supports, 4 parts, 26 cm³ of plastic; the
   lid is engraved "Grindarr" by default — any text or none ([Engraving](#engraving)).
+- **RP2040-Zero variant**: a Waveshare RP2040-Zero on the same perfboard holes in
+  place of the Super Mini, no radio. Its own base and lid (the module's USB-C sits in
+  an open window at the near end), the same caps, and a firmware you flash by copying
+  a `.uf2` onto the board's USB drive, with no web flasher
+  ([wiring](#rp2040-zero-variant), [firmware](#rp2040-zero-no-network),
+  [case](#rp2040-zero-case)).
 
 ## Bill of materials
 
@@ -64,6 +73,14 @@ as ghosts.*
 | Hot glue | one dab to hold the slide switch — never on the cell or the perfboard |
 | Kapton tape (or 0.3–0.5 mm PET / fish paper) + double-sided foam tape | insulate the perfboard's solder side; fix cell and TP4056 to the floor ([Assembly](#assembly)) |
 | Optional: 3 mm foam pad | under the OLED's free end so it can't rock on its header |
+
+**RP2040-Zero variant:** the same list, with these changes:
+
+| Part | Notes |
+|---|---|
+| Waveshare RP2040-Zero (replaces the Super Mini) | buy the **plain** RP2040-Zero, 18 × 23.5 mm with two 9-pin rows. Avoid the RP2040-Zero-**M**: its factory 5-pin header on the far edge (GP9…GP13) lands in row 8 between the two pin rows and crowds the SCL wire. Clones exist, so check the silkscreen against the [pinout below](#rp2040-zero-variant) |
+| Male pin headers | 2 × 9 (instead of 2 × 8); leave the far-edge pads empty |
+| 4 printed parts | base and lid from [`case/stl/rp2040-zero/`](case/stl/rp2040-zero/), the same two caps ([RP2040-Zero case](#rp2040-zero-case)) |
 
 ## Wiring
 
@@ -138,10 +155,95 @@ Verified from the Super Mini schematic (links in
 - `OUT−` is the protection-switched node (DW01 switches the low side): star the
   grounds at `OUT−`, never at `B−`.
 
+### RP2040-Zero variant
+
+![RP2040-Zero wiring block schematic](case/docs/rp2040-zero/wiring.png)
+
+The Waveshare RP2040-Zero uses the **same holes** as the Super Mini: pin rows in
+columns 3 and 9, USB-C at the bottom edge. It has nine pins a side, so its rows
+run **0…8**, and its pinout is **mirrored** compared with the Super Mini's:
+**5V, GND and 3V3 are on column 9** (the X+ side). Column 3 carries GP0…GP8 from
+the USB end up. Column 9 carries 5V, GND, 3V3, GP29, GP28, GP27, GP26, GP15,
+GP14. Waveshare's pinout graphic, the silkscreen photo, the schematic and the
+Arduino-Pico board definition all agree on this order. **Don't wire a Zero from
+the ESP32 table**: column 3 row 0 is `5V` on the Super Mini but GP0 on the Zero.
+Check your board's silkscreen before soldering.
+
+Holes are (column, row) as in the layout drawing: component-side view, row 0 at
+the USB end.
+
+| From | To | Notes |
+|---|---|---|
+| Battery + / − | TP4056 `B+` / `B−` | as above |
+| TP4056 `OUT+` | slide switch common | as above |
+| slide switch throw | Zero `5V`, hole (9,0) | `5V` **is** USB VBUS, no diode: see the power notes below |
+| TP4056 `OUT−` | Zero `GND`, hole (9,1) | the star point: both button grounds end here too |
+| Zero `3V3` (9,2) | OLED `VCC` (1,15) | |
+| OLED `GND` (1,14) | DOWN button's GND leg (2,12) | that leg is wired on to `GND` (9,1) |
+| Zero `GP14` (9,8) | OLED `SDA` (1,17) | I2C1 (`Wire1`), address 0x3C |
+| Zero `GP15` (9,7) | OLED `SCL` (1,16) | |
+| UP button, (12,10) / (15,12) | Zero `GP26` (9,6) / `GND` (9,1) | internal pull-up, active low |
+| DOWN button, (2,10) / (2,12) | Zero `GP8` (3,8) / `GND` (9,1) | internal pull-up, active low |
+
+![RP2040-Zero perfboard layout](case/docs/rp2040-zero/perfboard-layout.png)
+
+The pins come from an exhaustive search for a layout with no crossing wires:
+
+- GP14/GP15 is a hardware I2C pair (on the RP2040, SDA/SCL only come in fixed
+  pairs), and it sits in the same column (col 9) as 3V3 and GND.
+- GP26 is a 12.7 mm diagonal run from the UP switch that stays right of col 9,
+  and GP8 is a 5.7 mm hop from the DOWN switch.
+- The Zero has a single GND pin on its side headers, so the OLED's ground goes to
+  the DOWN switch's ground leg, and both switch grounds run to (9,1).
+
+The tact switches and the OLED stay where they are on the ESP32 board.
+
+- **Beep the tact legs before soldering.** The layout assumes the two legs on one
+  row are joined inside the switch, with the signal on row 10 and GND on row 12.
+  That comes from the working ESP32 board, not a datasheet. The DOWN switch uses
+  the left pair (2,10)/(2,12) and the UP switch the diagonal (12,10)/(15,12).
+- **Leave the far-edge pads empty.** GP9…GP13 land on row 8, columns 4…8.
+- **Keep solder and bare wire away from the Zero's underside.** Ten small SMD pads
+  (GND, GP25…GP17, 1.27 mm pitch) face the perfboard about 1.7 mm inboard of
+  column 9, with roughly 1.5 mm of air under the module.
+- BOOT and RESET are small SMD buttons on the module's top face, under the lid.
+  BOOT is the flash chip-select, not a GPIO, so it can't be a user button.
+
+#### RP2040-Zero power notes
+
+From the Waveshare schematic and wiki FAQ (links in
+[Verified part geometry](#verified-part-geometry)):
+
+- **The `5V` pin is USB VBUS, with no diode and no fuse.** VBUS, VSYS and the `5V`
+  pin are one net that feeds the 3.3 V LDO. It's the same hazard as on the Super
+  Mini, with an even harder tie: **flip the switch OFF before plugging a cable into
+  the Zero's USB-C**. Otherwise the host's 5 V lands on TP4056 `OUT+` = `B+` and
+  charges the cell with no current control. The variant case leaves this port
+  reachable through an open window ([RP2040-Zero case](#rp2040-zero-case)), so
+  opening the lid is no longer a reminder.
+- **LDO**: the schematic shows an RT9013-33 (25 µA quiescent) and the product page
+  lists an ME6217C33 (100 µA). Read the SOT-23-5 marking on your board. Either one
+  runs from a 1S cell on `5V` (minimum VIN 2.0–2.2 V).
+- **No diode drop**: 3V3 holds 3.30 V until the cell falls to about 3.35 V, then
+  tracks the cell minus 10–20 mV. The Super Mini's BAT60J path stops regulating at
+  ≈3.6–3.7 V. The RP2040 itself runs down to 1.63 V; the real limit is the flash
+  chip, which needs ≥ 2.7 V and gets there before the DW01's 2.4 V cut. The OLED's
+  charge pump wants ≥ 3.3 V, so expect a dimmer display near empty (untested).
+- **No power LED.** The Super Mini's 1–3 mA red LED has no counterpart here.
+- **The on-board WS2812 RGB LED (GP16) dominates sleep current.** It runs from
+  3V3 all the time and draws ≈0.45–1 mA even when dark (the WS2812B V5 datasheet
+  gives 0.6 mA as its centre value). Estimated board current asleep is ≈0.85 mA
+  with the LED fitted and ≈0.25 mA with it desoldered; neither figure is measured
+  (1 mA ≈ 24 mAh a day). Desoldering it also removes the boot blink.
+- Charge current, charging with the switch OFF and the `OUT−` star ground are the
+  same as above.
+
 ## Firmware
 
-Both firmwares implement the same behaviour and pinout; pick one. Build outputs
-are gitignored — `make` regenerates them from pinned Docker images.
+All three firmwares implement the same behaviour. On the ESP32-C3 Super Mini,
+pick plain or ESPHome (same pinout); the RP2040-Zero variant runs its own plain
+build. Build outputs are gitignored — `make` regenerates them from pinned Docker
+images.
 
 ### Plain (no network)
 
@@ -152,9 +254,9 @@ are gitignored — `make` regenerates them from pinned Docker images.
 | File | Role |
 |---|---|
 | [`platformio.ini`](firmware/plain/platformio.ini) | platform / board / U8g2 pins, `build_flags` (`SAVE_DELAY_MS`, `-I ../common`) |
-| [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine and the save-delay rule (`struct SaveDelay`) — pure C++, no Arduino |
+| [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine and the save-delay rule (`struct SaveDelay`) — pure C++, no Arduino; the RP2040-Zero build compiles the same file (`-I ../plain/src`) |
 | [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED (big count with the matching brew methods stacked to its right, redrawn only on a click), NVS (`Preferences`, flushed when `SaveDelay` is due and before sleep), deep sleep, boot blink + serial banner |
-| [`../common/grind_chart.h`](firmware/common/grind_chart.h) | brew-method table `GRIND_CHART`, `GRIND_MAX_LINES` (4) and `grind_matches()`, shared with the ESPHome build |
+| [`../common/grind_chart.h`](firmware/common/grind_chart.h) | brew-method table `GRIND_CHART`, `GRIND_MAX_LINES` (4) and `grind_matches()`, shared with the ESPHome and RP2040 builds |
 | [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine, the save delay (burst → one write, 1.5 s gaps → none, `millis` wrap, delay 0, flush before sleep) and the grind chart (table sanity, match oracle over counts 0…100, the line cap, one shipped-table spot check), runs on the host in `gcc:14` |
 | [`Dockerfile`](firmware/plain/Dockerfile) | `python:3.12-slim` + platformio 6.2.0 + git, `PLATFORMIO_CORE_DIR=/pio` |
 
@@ -203,10 +305,96 @@ shows it unavailable in between, it reconnects on every wake and pushes the coun
 Before an OTA, press a button to wake it and turn on **Keep Awake** within 30 s;
 turning it off re-arms the idle timer.
 
+### RP2040-Zero (no network)
+
+[`firmware/rp2040/`](firmware/rp2040/) is PlatformIO + Arduino-Pico 6.1.0 (the
+earlephilhower core), board `waveshare_rp2040_zero`, with two libraries: U8g2
+2.36.18 and Adafruit NeoPixel 1.15.5.
+
+- **Platform**: the official `platformio/raspberrypi` platform only has the mbed
+  core, so the build uses maxgerhardt's `platform-raspberrypi`, pinned at commit
+  `5d4561a`.
+- **Framework**: that platform pins Arduino-Pico by git, which means a ≈1.4 GB
+  recursive submodule clone. `platform_packages` swaps in the 6.1.0 release zip
+  (≈130 MB) instead; it builds a byte-identical firmware and keeps the CI build
+  (no cache volume) fast.
+- **Docker**: the build reuses the plain build's Docker image and the
+  `esp32-tally-pio` volume.
+
+| File | Role |
+|---|---|
+| [`platformio.ini`](firmware/rp2040/platformio.ini) | platform / framework pins, board, `filesystem_size = 64k`, libraries, `build_flags` (`SAVE_DELAY_MS`, `-I ../plain/src`, `-I ../common`) |
+| [`src/main.cpp`](firmware/rp2040/src/main.cpp) | pins, OLED on I2C1 (same layout code as plain), LittleFS count file, DORMANT sleep with a reboot on wake, WS2812 boot blink + serial banner |
+| [`../plain/src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the plain build's state machine and save-delay rule, included rather than copied, so `make plain-test` covers this build too |
+| [`../common/grind_chart.h`](firmware/common/grind_chart.h) | the shared brew-method table |
+
+```bash
+make plain-test   # the shared state machine: prints OK
+make rp2040       # -> firmware/rp2040/build/tally-rp2040.uf2
+```
+
+Result: RAM 3.9 % (10.1 KB), Flash 4.2 % (85.0 KB of 2 MB), UF2 190 KiB. The
+behaviour matches the plain build; what differs underneath:
+
+- **Pins**: UP GP26 and DOWN GP8, with internal pull-ups enabled in code (RP2040
+  pins come out of reset with the pull-*down* on). OLED SDA GP14 / SCL GP15 on
+  I2C1 at 400 kHz. U8g2 ignores constructor pins on this core, so the firmware
+  assigns them to `Wire1` before starting the display.
+- **Count storage**: one 4-byte LittleFS file in a 64 KB partition at the end of
+  flash, saved by the same rule as the other builds (2 s after the last click, and
+  before sleep).
+  - Each save rewrites the file in place as a single LittleFS commit. LittleFS
+    is copy-on-write, so a power cut during a write keeps the previous count, and
+    wear spreads over the partition (about one 4 KB erase per 16 saves). Opening
+    with `"w"` would first commit an empty file, so the firmware doesn't use it
+    once the file exists. Arduino-Pico's EEPROM emulation
+    would erase and rewrite one sector per save and could lose the whole count.
+  - A save counts only if the value reads back (Arduino-Pico's `close()` hides
+    littlefs errors). A failed save stays pending and is retried 2 s later, up
+    to 3 times per burst; sleep waits for those tries.
+  - Until a save lands, the count is also kept in a watchdog scratch register
+    (one word with a validity tag, so it is updated atomically), which survives
+    DORMANT, the wake reboot and any other soft reset.
+    If all three tries fail, the counter sleeps anyway, and the next boot takes
+    the count back and saves it again. Staying awake would not protect it: on a
+    filesystem that keeps failing, the cell would reach the TP4056's cut-off
+    within days, and the power loss would clear the registers too. Only a power
+    cut or the RESET button loses an unsaved count, as with any click in the 2 s
+    before a save.
+  - The very first boot formats the partition, so that boot blinks about 0.7 s
+    longer, once.
+  - UF2 updates leave the partition alone. Changing `filesystem_size` moves it,
+    which loses the count.
+- **Sleep**: after 30 s idle the OLED goes to power-save, the WS2812 is set dark
+  and the chip enters **DORMANT**: all clocks and oscillators stop, and the RP2040
+  draws ≈0.18 mA typical (datasheet).
+  - Each button is armed as a level wake source for its current state: a released
+    button wakes the chip on press, a held or stuck one on release. A stuck button
+    therefore can't keep the chip awake.
+  - On wake the firmware restarts the ring oscillator and reboots through the
+    watchdog, so every wake runs `setup()` from scratch, like the ESP32's
+    deep-sleep wake.
+  - `setup()` reads the buttons' current state instead of waiting for a release,
+    so the wake press is not counted.
+- **Liveness**: the on-board RGB LED glows dim blue for the length of `setup()`
+  (≈0.3 s, on every boot and wake). A blink with a dark OLED means the MCU runs;
+  an LED that stays lit means `setup()` hung.
+- **Serial banner**: the USB serial port prints
+  `boot reset=<getResetReason> wake=<0|1>` and `count=N (restored)` at boot
+  (`(unsaved, kept over sleep)` when it came back from the scratch registers
+  after failed saves), then `count=N` per click.
+  - `reset=3 wake=1`: woke from a button. The wake reboot counts as a soft reset,
+    and `wake` comes from a watchdog scratch register.
+  - `reset=1 wake=0`: switched on with the slide switch.
+  - `reset=2`: the RESET button.
+  - Output with no host attached is dropped and never blocks, so the banner of a
+    cold start is usually gone before a terminal opens. A sleeping Zero drops off
+    USB and comes back after the wake reboot.
+
 ### Brew-method labels (grind chart)
 
-Both firmwares show, to the right of the count, the brew methods whose grind range
-contains it. The table is one header compiled by both,
+All three firmwares show, to the right of the count, the brew methods whose grind
+range contains it. The table is one header compiled by all three,
 [`firmware/common/grind_chart.h`](firmware/common/grind_chart.h); the shipped rows
 are for a Comandante C40 MK4, clicks from zero, from
 [Honest Coffee Guide's table](https://honestcoffeeguide.com/comandante-c40-mk4-grind-settings/)
@@ -234,8 +422,8 @@ column 120 of 128. The screen is static and redrawn only on a click.
 
 To use your own grinder or ranges, edit `GRIND_CHART`: one `{from, to, "Name"}` row
 per method, both ends inclusive, table order = display order (and decides which
-four show when more overlap); `{}` turns the labels off. Rebuild both firmwares
-(`make plain`, `make esphome`). `make plain-test` checks the table (from ≥ 0,
+four show when more overlap); `{}` turns the labels off. Rebuild the firmwares
+(`make plain`, `make rp2040`, `make esphome`). `make plain-test` checks the table (from ≥ 0,
 from ≤ to, a non-empty name), the matched names and their order for every count
 0…100 against the table (so it follows your edits), and the cap (only the first
 names are kept, the full match count is still reported). One literal spot check of
@@ -246,12 +434,14 @@ the shipped rows in
 
 ### Flashing
 
-No build needed: grab the prebuilt `.factory.bin` files from the
+No build needed: grab the prebuilt `.factory.bin` files (ESP32) or
+`tally-rp2040.uf2` (RP2040-Zero) from the
 [latest release](https://github.com/Ardakilic/esp32-tally/releases/latest)
 (rebuilt on every push to `main`; the [landing page](https://ardakilic.github.io/esp32-tally/)
 links them directly).
 
-Docker Desktop on macOS cannot pass USB through, so flash from the browser:
+**ESP32-C3 Super Mini.** Docker Desktop on macOS cannot pass USB through, so flash
+from the browser:
 
 1. **Slide switch OFF** (or battery disconnected) — see [Power notes](#power-notes).
 2. Open <https://web.esphome.io> in Chrome or Edge → **Connect** → pick the Super
@@ -267,11 +457,31 @@ Wi-Fi/API credentials (CI has no real secrets) — it counts standalone and you 
 set Wi-Fi via its captive-portal hotspot, but for Home Assistant rebuild it with
 your own `secrets.yaml`.
 
+**RP2040-Zero (UF2).** No browser and no USB passthrough needed: the Zero's boot
+ROM shows up as a USB drive and takes the firmware as a file copy, from macOS or
+anywhere else.
+
+1. **Slide switch OFF** (`5V` is VBUS, see the
+   [RP2040-Zero power notes](#rp2040-zero-power-notes)).
+2. **Lid off**: BOOT and RESET are on the module's top face. You need them for
+   every UF2 flash, because a sleeping Zero is off USB.
+3. Hold **BOOT** while plugging the cable into the Zero's USB-C. If it is already
+   plugged in, hold BOOT, tap RESET, then release BOOT. A drive named `RPI-RP2`
+   appears.
+4. Copy `tally-rp2040.uf2` (the release asset or
+   `firmware/rp2040/build/tally-rp2040.uf2`) onto it. The board reboots into the
+   counter on its own.
+
+The count survives UF2 updates, because the LittleFS partition at the end of flash
+isn't touched.
+
 ## Case
 
 [`case/`](case/) — one Python script ([`generate.py`](case/generate.py), shapely +
-trimesh + manifold3d, pinned, `python:3.14-slim`) builds four watertight STLs; the
-same constants drive the README images and the geometry self-test.
+trimesh + manifold3d, pinned, `python:3.14-slim`) builds four watertight STLs, plus
+a base and lid for the [RP2040-Zero variant](#rp2040-zero-case) with `--mcu
+rp2040-zero`. The same constants drive the README images and the geometry
+self-test.
 
 ### Parts
 
@@ -346,6 +556,47 @@ Open it by lifting with a coin in the pry notch at the display end — the deten
 release ramps are 45°, so the lid pries off. Optionally stick a 3 mm foam pad under
 the OLED's free end before closing.
 
+### RP2040-Zero case
+
+![RP2040-Zero variant — closed and exploded](case/docs/rp2040-zero/renders.png)
+
+| STL | Size (mm) | Volume | Print orientation |
+|---|---|---|---|
+| [`case/stl/rp2040-zero/tally-base.stl`](case/stl/rp2040-zero/tally-base.stl) | 58.0 × 57.6 × 20.1 | 17.1 cm³ | upright, as exported |
+| [`case/stl/rp2040-zero/tally-lid.stl`](case/stl/rp2040-zero/tally-lid.stl) | 58.0 × 57.6 × 9.5 | 7.4 cm³ | as exported (top face down) |
+| caps | — | — | the default `tally-cap-plus.stl` / `tally-cap-minus.stl` (byte-identical for both modules) |
+
+Everything else (outer size, snap detents, OLED window, cap holes, TP4056 and
+switch openings, engraving, fit flags) is the same as the default case. The
+difference is the module end, which is **an open 19 × 7.5 mm window**.
+
+The Zero's first pin is 1.59 mm from its USB edge (Super Mini 2.36), and its
+receptacle overhangs the PCB by only 1.21 mm (Super Mini 1.5). On the same holes,
+its port face lands at Y −25.66: 0.36 mm *past* the frame's inner face, and
+1.06 mm further in than the ESP32's. No printable wall fits in front of it:
+
+- a recess of ≤ 0.3 mm would leave at most a 0.66 mm sliver of wall;
+- a ≥ 1.2 mm wall would leave a 0.84 mm recess that stops a plug short of
+  latching.
+
+So the plug relief in the wall's outer face (19 mm wide, from 2 mm above the
+perfboard to the rim) cuts straight through to the frame opening, and the lid
+plate's notch ends at the opening edge. The receptacle itself is the plug stop.
+The Zero's PCB also ends 0.85 mm inside the opening, so the base has no wall
+pocket for it.
+
+The window makes the port reachable with the lid on, so the switch-OFF rule
+([power notes](#rp2040-zero-power-notes)) relies on you remembering it. It also
+lets dust in.
+
+Printing is as above, minus the thin-wall note (there's no wall at the port).
+Assembly is the same; in step 7 the Zero's USB-C goes into the open window
+instead of a wall slot. Two clearances the self-test doesn't model:
+
+- the module's BOOT/RESET buttons sit 1.37 mm under the lid;
+- the "−" cap's flange clears the module's far edge by 0.53 mm in plan, and sits
+  0.67 mm above the module's PCB. Keep solder blobs off that edge.
+
 ### Field notes
 
 First build, 2026-10-10: with the TP4056 and cell hot-glued under the board the
@@ -418,35 +669,46 @@ electronics (perfboard, battery, TP4056, ESP32, OLED, slide switch), and downloa
 the exact STLs from the **Print these four** list; the Dimensions panel repeats the
 tolerance, snap, shell and engraving summary `generate.py` prints, so a tuned build shows
 its `GEN_ARGS` (the lid's engraving is in the embedded STL). The landing page ([`index.html`](index.html)) links the preview, the
-STLs, the README images and both firmware folders.
+STLs, the README images, all three firmware folders and the release downloads.
+The preview models the ESP32 build only. The RP2040-Zero variant gets a card with
+its renders, layout, wiring and STLs.
 
 ## Regenerating everything
 
 ```bash
-make                  # case + plain + esphome
+make                  # case + plain + rp2040 + esphome
 ```
 
 | Target | Does | Output |
 |---|---|---|
-| `make case` | build image, `generate.py`, `tools/render_docs.py`; `ENGRAVING="…"` / `OMIT_ENGRAVING=1` set the lid text | `case/stl/*.stl`, `case/preview.html`, `index.html`, `case/docs/*.png` |
-| `make case-verify` | 105 geometry checks on in-memory builds (70 with `--snap-bite 0`, 101 with `--omit-engraving`), exit 1 on failure | PASS/FAIL table |
+| `make case` | build image, then `generate.py` + `tools/render_docs.py` twice: first for `--mcu rp2040-zero`, then for the default `--mcu esp32-c3` (the order lets `index.html` list the variant's STL sizes); `ENGRAVING="…"` / `OMIT_ENGRAVING=1` set the lid text | `case/stl/*.stl`, `case/preview.html`, `index.html`, `case/docs/*.png`; `case/stl/rp2040-zero/tally-{base,lid}.stl`, `case/docs/rp2040-zero/*.png` |
+| `make case-verify` | geometry checks on in-memory builds for both modules: 105 for the ESP32 case (70 with `--snap-bite 0`, 101 with `--omit-engraving`), 104 for the RP2040-Zero case (69 / 100); exit 1 if either fails | PASS/FAIL table per module |
 | `make vendor` | fetch the latest three.js module build (stdlib-only, bare `python:3.14-slim`) | `case/vendor/three.{module,core}.min.js`, `THREE_VERSION` |
 | `make plain` | build image, `pio run`, copy the factory image | `firmware/plain/build/tally-plain.factory.bin` |
-| `make plain-test` | state-machine + grind-chart self-test in `gcc:14` | `OK` |
+| `make plain-test` | state-machine + grind-chart self-test in `gcc:14` (the RP2040 build shares the state machine) | `OK` |
+| `make rp2040` | `pio run` in the plain image, copy the UF2 | `firmware/rp2040/build/tally-rp2040.uf2` |
 | `make esphome` | `esphome compile` (needs `secrets.yaml`) | `firmware/esphome/.esphome/build/tally/build/firmware.{factory,ota}.bin` |
 | `make esphome-config` | `esphome config` | validated YAML |
 | `make esphome-ota` | `esphome run --device $(DEVICE)` | flashed device |
-| `make image-case` / `make image-plain` | (re)build the two Docker images | — |
-| `make clean` | removes `case/stl case/docs case/preview.html index.html firmware/plain/.pio firmware/plain/build firmware/esphome/.esphome` | — |
+| `make image-case` / `make image-plain` | (re)build the two Docker images (`image-plain` serves both PlatformIO builds) | — |
+| `make clean` | removes `case/stl case/docs case/preview.html index.html firmware/plain/.pio firmware/plain/build firmware/rp2040/.pio firmware/rp2040/build firmware/esphome/.esphome` | — |
+
+Every `make case` / `make case-verify` pass gets the same `GEN_ARGS`, so fit flags
+and the engraving apply to both modules' parts.
 
 Pinned images: `python:3.14-slim` + [`case/requirements.txt`](case/requirements.txt)
 (the exact wheels the committed STLs were triangulated with) + Debian's
 `fonts-liberation` for the lid engraving, `python:3.12-slim` +
-platformio 6.2.0, `ghcr.io/esphome/esphome:2026.9.1`, `gcc:14`. Caches live in two
-named Docker volumes, never on the host: **`esp32-tally-pio`** (PlatformIO core —
-pioarduino platform, Xtensa/RISC-V toolchain, Arduino framework, U8g2) and
-**`esp32-tally-esphome-cache`** (ESPHome's PlatformIO/IDF cache). First builds
-download a few hundred MB into them; rebuilds take seconds. `make clean` leaves
+platformio 6.2.0 (both PlatformIO builds), `ghcr.io/esphome/esphome:2026.9.1`,
+`gcc:14`. Caches live in two named Docker volumes, never on the host:
+
+- **`esp32-tally-pio`**: the PlatformIO core. For the ESP32 that's the pioarduino
+  platform, the Xtensa/RISC-V toolchain, the Arduino framework and U8g2. For the RP2040
+  it's maxgerhardt's platform, Arduino-Pico, the ARM toolchain and NeoPixel.
+- **`esp32-tally-esphome-cache`**: ESPHome's PlatformIO/IDF cache.
+
+First builds download a few hundred MB into them (the RP2040 build adds about
+1 GB); rebuilds take seconds. `make clean` leaves
 the volumes alone (`docker volume rm esp32-tally-pio esp32-tally-esphome-cache`
 if you want them gone).
 
@@ -458,8 +720,11 @@ together with the change; `make vendor` only when you want a newer three.js.
 `make case-verify` ([`case/tools/verify.py`](case/tools/verify.py)) rebuilds every
 part in memory and checks: watertightness; bounding boxes; skirt = opening − 2 ×
 clearance; rays through the OLED window, both cap holes, both USB-C openings and
-the switch slot; the 1.4 mm wall and port recess at the ESP32 USB-C; that the
-battery, TP4056, ESP32, OLED and switch ghosts do not intersect the shell; the
+the switch slot; the 1.4 mm wall and port recess at the ESP32 USB-C (for the
+RP2040-Zero: rays over the whole receptacle face meet no base or lid material, and
+an assumed 12 × 6.4 mm plug overmold reaches 0.05 mm short of the face without
+touching either part); that the battery, TP4056, module, OLED and switch ghosts do
+not intersect the shell; the
 cap-to-hole play; the engraving's depth and footprint (or a plain top with
 `--omit-engraving`); and, per snap site, the crest protrusion, groove depth,
 seated Z/along-the-wall margins, remaining frame wall, clearance to the USB
@@ -499,11 +764,44 @@ Dimensions the case is built around (all in `generate.py` with their sources):
   pads on one face —
   [product page (Özdisan)](https://www.ozdisan.com/p/prototipleme-devreleri-621/ozd-arduino-delkl-pertnaks-5x5-643014).
 
+RP2040-Zero variant (in `MCUS` in `generate.py`):
+
+- **Waveshare RP2040-Zero**: PCB 18 × 23.5 mm with R1 corners, 1.09 mm thick
+  (STEP model only; no document states it). Two 9-pin rows 15.24 mm apart, first
+  pin centre 1.59 mm from the USB edge (dimension drawing; STEP 1.60).
+  - USB-C shell: 8.94 mm wide, top 3.25 mm above the PCB, overhanging 1.21 mm
+    (STEP; the drawing implies an 8.66 mm shell — measure yours).
+  - On top: BOOT/RESET SMD buttons 2.5 mm tall, WS2812 1.0 mm, flash 0.6 mm.
+    Underneath: the RP2040, the 12 MHz crystal (1.0 mm, the tallest) and the LDO.
+  - Power: `5V` = USB VBUS = VSYS directly, then the LDO to 3V3. The WS2812B (DIN
+    GP16) runs from 3V3. No power LED.
+  - Sources: [wiki + FAQ](https://www.waveshare.com/wiki/RP2040-Zero),
+    [dimension drawing](https://www.waveshare.com/w/upload/f/f4/900px-RP2040-Zero-details-size.jpg),
+    [pinout](https://www.waveshare.com/w/upload/1/1f/900px-RP2040-Zero-details-7.jpg),
+    [underside pads](https://www.waveshare.com/w/upload/6/61/RP2040-Zero-FAQ02.png),
+    [schematic](https://files.waveshare.com/upload/4/4c/RP2040_Zero.pdf),
+    [STEP model](https://files.waveshare.com/upload/f/f7/RP2040_Zero_stp.zip).
+- **LDO**: the schematic shows an RT9013-33 (25 µA quiescent, 250 mV dropout at
+  500 mA) and the product page lists an ME6217C33M5G (100 µA). Both run from a
+  1S cell or USB 5 V (RT9013 2.2–5.5 V, ME6217 2.0–6.5 V), and with no diode in
+  front of them 3V3 tracks the cell below ≈3.35 V —
+  [RT9013 datasheet](https://datasheet.lcsc.com/datasheet/pdf/bed04e2cfb314099bd38095130ed1bb8.pdf),
+  [ME6217 datasheet](https://datasheet.lcsc.com/datasheet/pdf/3d38df48f5744f9f5473666520a2674d.pdf).
+- **RP2040**: DORMANT 0.18 mA typical (Table 637), wakes on a GPIO level or edge
+  (§2.11.3), IOVDD 1.63–3.63 V —
+  [datasheet](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf).
+  The W25Q16JV flash wants ≥ 2.7 V —
+  [datasheet](https://www.winbond.com/resource-files/w25q16jv%20spi%20revh%2004082019%20plus.pdf).
+- **WS2812B**: quiescent current 0.6 mA centre value —
+  [V5 datasheet](https://learn.watterott.com/kb/ws281x/WS2812B-v5.pdf); just under
+  1 mA dark, measured by
+  [PJRC](https://pjrc.com/how-much-current-do-ws2812-neopixel-leds-really-use).
+
 ## Not yet verified on hardware
 
 One unit has been printed, assembled on the Özdisan board and flashed with the
 plain firmware (2026-10-10, see [Field notes](#field-notes)); the ESPHome build
-has not run on hardware yet. The rest is from datasheets, the schematic, the
+and the RP2040-Zero variant have not run on hardware yet. The rest is from datasheets, the schematic, the
 geometry self-test and a host-side test of the state machine. Still open, in the
 order they'd bite:
 
@@ -513,7 +811,7 @@ order they'd bite:
 - The ESPHome **`millis() > 1500` wake-press guard** (the press that woke the chip
   is already ON at boot; its release must not count) — margin chosen by reasoning,
   not measured boot time.
-- **Brew-label layout and 400 kHz I2C** (both builds, 2026-10-11) — the pixel rows
+- **Brew-label layout and 400 kHz I2C** (ESP32 builds 2026-10-11, RP2040-Zero build 2026-11-18) — the pixel rows
   of the digits and the stacked names come from a host render of U8g2, not the
   panel; whether every OLED module takes 400 kHz is untested (ESPHome: try
   `i2c: timeout: 10ms` first).
@@ -534,6 +832,22 @@ order they'd bite:
 - **Engraving legibility** — 6 mm Liberation Sans Bold, 0.6 mm deep, printed
   face-down on the bed; counters of the small letters are untested with a 0.4 mm
   nozzle.
+- **The whole RP2040-Zero variant** (2026-11-18): nothing of it has been built,
+  printed or flashed. The firmware compiles without warnings and the case passes
+  its self-test. Open:
+  - DORMANT entry and exit, including the ring-oscillator restart before the wake
+    reboot (if that is wrong, the chip locks up after its first sleep).
+  - Level wake on both buttons, including a held or stuck button waking on
+    release; a quick wake tap not counting; the boot banner values.
+  - Sleep current: ≈0.85 mA estimated with the WS2812, ≈0.25 mA without it.
+  - Plug seating in the open end window (the 12 × 6.4 mm overmold is an
+    assumption).
+  - 400 kHz I2C on GP14/GP15 with only the OLED module's pull-ups.
+  - The OLED at low cell voltage.
+  - Which LDO your board carries, and the WS2812 colour order.
+  - The first-boot LittleFS format, and the count surviving a UF2 re-flash.
+  - The STEP-only numbers (PCB thickness, USB overhang) and the tact-leg pairing
+    the layout assumes.
 
 Found something? Open an issue with the measurement.
 
