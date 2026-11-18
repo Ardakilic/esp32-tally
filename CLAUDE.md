@@ -492,12 +492,15 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   (LittleFS open `"r+"` + write + close = one commit; `"w"` only creates the file), also first thing in `sleepNow()`.
   `File::close()` drops littlefs's return code, so `storeCount()` reads the value back and
   `dirty` clears only on a match; a failed save is retried `SAVE_DELAY_MS` later, `SAVE_TRIES`
-  (3) per burst (a click resets them), and `sleepNow()` stays awake while tries remain. Tries
-  spent: it parks the count in `watchdog_hw->scratch[1]` with `scratch[2] = [1] ^ 0x5a7ec0de`
-  (survive DORMANT + the watchdog reboot; POR/RUN clear them) and sleeps; `setup()` takes a
-  valid stash (≤ MAX) over the file, clears it, `save.touch()`es it (banner `(unsaved, kept
-  over sleep)`). So a failed save never costs counts without power loss, and a broken FS
-  never keeps the chip awake.
+  (3) per burst (a click resets them), and `sleepNow()` stays awake while tries remain, then
+  sleeps anyway. Unsaved-count stash: every count change `stash()`es it in
+  `watchdog_hw->scratch[1]` with `scratch[2] = [1] ^ 0x5a7ec0de` (survive DORMANT, the watchdog
+  reboot and any soft reset; POR/RUN clear them); only a successful `flush()` clears it.
+  `setup()` takes a valid stash (≤ MAX) over the file and `save.touch()`es it, keeping the stash
+  until the save lands (banner `(unsaved, kept over sleep)`). Sleeping with a failed save is
+  **on purpose** (CodeRabbit asked for "no sleep while unsaved"): awake on a broken FS the cell
+  reaches the DW01 cut-off in days and the power loss clears scratch too, so staying up loses
+  the count as well, plus the device; DORMANT keeps the stash for as long as the cell lasts.
 - **I2C 400 kHz** on all three builds: plain and RP2040 `setBusClock`, ESPHome
   `i2c: frequency: 400kHz` (default 50 kHz ≈ 90 ms/frame), so a click's redraw blocks
   the loop less. OLED misbehaving at 400 kHz on esp-idf → try `i2c: timeout: 10ms`

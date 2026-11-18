@@ -351,11 +351,15 @@ behaviour matches the plain build; what differs underneath:
     would erase and rewrite one sector per save and could lose the whole count.
   - A save counts only if the value reads back (Arduino-Pico's `close()` hides
     littlefs errors). A failed save stays pending and is retried 2 s later, up
-    to 3 times per burst; sleep waits for those tries. If all three fail, the
-    count is parked in two watchdog scratch registers, which survive DORMANT and
-    the wake reboot, and the next boot takes it back and saves it again, so the
-    counter still sleeps instead of draining the cell. Only a power cut or the
-    RESET button in that state loses the burst, as with any unsaved click.
+    to 3 times per burst; sleep waits for those tries.
+  - Until a save lands, the count is also kept in two watchdog scratch
+    registers, which survive DORMANT, the wake reboot and any other soft reset.
+    If all three tries fail, the counter sleeps anyway, and the next boot takes
+    the count back and saves it again. Staying awake would not protect it: on a
+    filesystem that keeps failing, the cell would reach the TP4056's cut-off
+    within days, and the power loss would clear the registers too. Only a power
+    cut or the RESET button loses an unsaved count, as with any click in the 2 s
+    before a save.
   - The very first boot formats the partition, so that boot blinks about 0.7 s
     longer, once.
   - UF2 updates leave the partition alone. Changing `filesystem_size` moves it,

@@ -23,8 +23,9 @@ constexpr uint32_t IDLE_SLEEP_MS = 30000;
 // Watchdog scratch[0] = "this boot is a dormant wake": survives the watchdog reboot, cleared by power-on/RUN.
 // The bootrom and the SDK use only scratch[4..7].
 constexpr uint32_t WAKE_MAGIC = 0x7a11d0e5u;
-// Watchdog scratch[1..2] = a count whose save never landed, carried across the wake reboot (RAM is not); same
-// lifetime as scratch[0]. [2] = [1] ^ STASH_MAGIC, so the zeroed power-on state and stale values never match.
+// Watchdog scratch[1..2] = the count while it is unsaved: written on every change, cleared only once a save has
+// landed, so the wake reboot (or any other soft reset) cannot drop it. Power-on/RUN clear them, like the RAM.
+// [2] = [1] ^ STASH_MAGIC, so the zeroed power-on state and stale values never match.
 constexpr uint32_t STASH_MAGIC = 0x5a7ec0deu;
 #ifndef SAVE_DELAY_MS
 #define SAVE_DELAY_MS 2000  // see platformio.ini build_flags
@@ -109,11 +110,17 @@ static bool storeCount(int32_t c) {
 constexpr int SAVE_TRIES = 3;
 static int save_failures = 0;
 
+static void stash(int32_t c) {
+  watchdog_hw->scratch[1] = static_cast<uint32_t>(c);
+  watchdog_hw->scratch[2] = static_cast<uint32_t>(c) ^ STASH_MAGIC;
+}
+
 static void flush(uint32_t now) {
   if (!save.dirty || save_failures >= SAVE_TRIES) return;
   if (storeCount(tally.count)) {
     save.dirty = false;
     save_failures = 0;
+    watchdog_hw->scratch[1] = watchdog_hw->scratch[2] = 0;  // the file has it now
   } else {
     save.touch(now);
     Serial.printf("save failed (%d/%d)\n", ++save_failures, SAVE_TRIES);
@@ -166,12 +173,9 @@ static void sleepNow() {
   if (!save_failures) flush(millis());  // the ordinary pending save; flash writes need the normal clocks
   // A failed save with tries left (loop(), every SAVE_DELAY_MS): stay awake for them.
   if (save.dirty && save_failures < SAVE_TRIES) return;
-  // Tries spent: DORMANT ends in a reboot that drops RAM, and staying awake on a broken filesystem would drain
-  // the cell, so the count rides the reboot in watchdog scratch; setup() takes it back and saves it again.
-  if (save.dirty) {
-    watchdog_hw->scratch[1] = static_cast<uint32_t>(tally.count);
-    watchdog_hw->scratch[2] = static_cast<uint32_t>(tally.count) ^ STASH_MAGIC;
-  }
+  // Tries spent: sleep anyway. The unsaved count is already in watchdog scratch (stash() on every change), which
+  // survives DORMANT and the wake reboot; setup() takes it back and saves it again. Staying awake on a broken
+  // filesystem would lose it too: the cell would hit the DW01 cut-off within days, and power loss clears scratch.
   u8g2.setPowerSave(1);  // blocking I2C, done before clk_sys/clk_peri change
   pixel.clear();
   pixel.show();          // already dark since setup(); re-latched black for certainty
@@ -191,11 +195,10 @@ void setup() {
   pinMode(BTN_UP, INPUT_PULLUP);  // RP2040 pads come out of reset with the pull-DOWN on
   pinMode(BTN_DOWN, INPUT_PULLUP);
   tally.count = loadCount();
-  const uint32_t stash = watchdog_hw->scratch[1];
-  const bool stashed = watchdog_hw->scratch[2] == (stash ^ STASH_MAGIC) && stash <= uint32_t(Tally::MAX);
-  watchdog_hw->scratch[1] = watchdog_hw->scratch[2] = 0;
-  if (stashed) {  // newer than the file: its save failed before the last sleep
-    tally.count = static_cast<int32_t>(stash);
+  const uint32_t parked = watchdog_hw->scratch[1];
+  const bool stashed = watchdog_hw->scratch[2] == (parked ^ STASH_MAGIC) && parked <= uint32_t(Tally::MAX);
+  if (stashed) {  // newer than the file (its save never landed); the stash stays until flush() succeeds
+    tally.count = static_cast<int32_t>(parked);
     save.touch(millis());  // still unsaved: written by the normal rule, SAVE_DELAY_MS from now
   }
   Serial.printf("count=%ld (%s)\n", (long)tally.count, stashed ? "unsaved, kept over sleep" : "restored");
@@ -220,7 +223,8 @@ void loop() {
     // Deferred: written SAVE_DELAY_MS after the last change so a burst of clicks is one flash write;
     // sleepNow() flushes first, so DORMANT never loses a pending count.
     save.touch(now);
-    save_failures = 0;  // a new burst gets fresh save attempts
+    stash(tally.count);  // unsaved until flush() succeeds: kept over any soft reset meanwhile
+    save_failures = 0;   // a new burst gets fresh save attempts
     Serial.printf("count=%ld\n", (long)tally.count);
   }
   if (save.due(now, SAVE_DELAY_MS)) flush(now);
