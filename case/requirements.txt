@@ -4,7 +4,7 @@
 # are generated with (Python 3.14, see Dockerfile). To upgrade: bump, rebuild
 # the image, regenerate, check the printed bounding boxes/volumes, and commit
 # the regenerated STLs together with this file.
-numpy==2.5.3
+numpy==2.5.5
 shapely==2.1.2
 trimesh==5.1.0
 manifold3d==3.5.3
