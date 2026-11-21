@@ -1,5 +1,6 @@
-// Brew-method labels shown next to the count. Shared by both firmwares: the plain build includes it
-// through `-I ../common` (platformio.ini) and ESPHome through `esphome: includes:` (tally.yaml).
+// Brew-method labels shown next to the count. Shared by all three firmwares: the plain and RP2040-Zero
+// builds include it through `-I ../common` (their platformio.ini) and ESPHome through `esphome: includes:`
+// (tally.yaml).
 //
 // Edit GRIND_CHART freely: add, change or delete rows. Every row whose [from, to] range (inclusive)
 // contains the count is shown, one per line in table order, to the right of the big digits.

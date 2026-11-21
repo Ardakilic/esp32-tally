@@ -8,7 +8,7 @@ esphome:
   name: ${name}
   friendly_name: ${friendly_name}
   includes:
-    - ../common/grind_chart.h  # GRIND_CHART, grind_matches(); shared with the plain build
+    - ../common/grind_chart.h  # GRIND_CHART, grind_matches(); shared with the plain and RP2040-Zero builds
   on_boot:
     - script.execute: idle_timer
   on_shutdown:
