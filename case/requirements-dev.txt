@@ -5,4 +5,4 @@
 # up in it.
 rtree==1.4.1
 scipy==1.18.1
-networkx==3.6.1
+networkx==3.7
