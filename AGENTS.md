@@ -18,6 +18,13 @@ Instructions for AI coding agents working in this repo live in
     UP GP26, DOWN GP8, OLED SDA GP14 / SCL GP15 on I2C1 (`Wire1`) @0x3C. It includes
     `firmware/plain/src/tally_logic.h` on purpose (one state machine, covered by
     `make plain-test`).
+  - Every build keeps a wake source armed while asleep: plain re-checks a button that
+    is down at sleep time with a 10 s timer (`deepSleep()`), ESPHome waits for UP
+    (`KEEP_AWAKE`), the RP2040 wakes on its release. Plain only: `r<reset reason>` in
+    the OLED's top-left corner after any boot that is not a deep-sleep wake.
+  - A unit that goes dark and comes back when USB is plugged into the ESP32 (switch
+    ON) had lost its supply — power path, not firmware. Read CLAUDE.md → User context
+    before touching the sleep code for it.
   - Both modules' `5V` pin is USB VBUS — the ESP32 case hides that port on purpose
     (don't "fix" it); the RP2040-Zero case leaves it in an open end window because
     no wall fits in front of it.

@@ -255,7 +255,7 @@ images.
 |---|---|
 | [`platformio.ini`](firmware/plain/platformio.ini) | platform / board / U8g2 pins, `build_flags` (`SAVE_DELAY_MS`, `-I ../common`) |
 | [`src/tally_logic.h`](firmware/plain/src/tally_logic.h) | the button/count state machine and the save-delay rule (`struct SaveDelay`) — pure C++, no Arduino; the RP2040-Zero build compiles the same file (`-I ../plain/src`) |
-| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED (big count with the matching brew methods stacked to its right, redrawn only on a click), NVS (`Preferences`, flushed when `SaveDelay` is due and before sleep), deep sleep, boot blink + serial banner |
+| [`src/main.cpp`](firmware/plain/src/main.cpp) | pins, OLED (big count with the matching brew methods stacked to its right, redrawn only on a click), NVS (`Preferences`, flushed when `SaveDelay` is due and before sleep), deep sleep (GPIO wake, timer re-check of a held button), boot blink, reset tag + serial banner |
 | [`../common/grind_chart.h`](firmware/common/grind_chart.h) | brew-method table `GRIND_CHART`, `GRIND_MAX_LINES` (4) and `grind_matches()`, shared with the ESPHome and RP2040 builds |
 | [`test/tally_logic_test.cpp`](firmware/plain/test/tally_logic_test.cpp) | assert-based self-test of the state machine, the save delay (burst → one write, 1.5 s gaps → none, `millis` wrap, delay 0, flush before sleep) and the grind chart (table sanity, match oracle over counts 0…100, the line cap, one shipped-table spot check), runs on the host in `gcc:14` |
 | [`Dockerfile`](firmware/plain/Dockerfile) | `python:3.12-slim` + platformio 6.2.0 + git, `PLATFORMIO_CORE_DIR=/pio` |
@@ -265,7 +265,7 @@ make plain-test   # host self-test: prints OK
 make plain        # -> firmware/plain/build/tally-plain.factory.bin
 ```
 
-Result: RAM 4.6 % (15.2 KB), Flash 25.5 %, merged image 407 KiB. The
+Result: RAM 4.6 % (15.2 KB), Flash 25.7 %, merged image 409 KiB. The
 `.factory.bin` is the complete flash image (bootloader @0x0, partitions @0x8000,
 boot_app0 @0xe000, app @0x10000) — flash it at offset 0. No OTA: reflashing means
 opening the lid.
@@ -277,7 +277,19 @@ wiring) is the problem. The USB serial port (115200) prints
 count at boot, then `count=N` per click. A button stuck low (solder bridge, jammed
 cap) cannot hold the chip awake: `setup()` seeds the button state instead of
 waiting for a release (so the wake press still doesn't count), and a pin that is
-low at sleep time is left out of the wake mask.
+low at sleep time is left out of the wake mask. A timer looks at such a pin again
+every 10 s (`RECHECK_US`): a boot that goes straight back to sleep before the LED,
+the serial port, the flash or the OLED are touched (≈0.2 s, so ≈0.4 mA on average
+while the button stays down — estimated). So there is always a wake source, also
+with both buttons down when the 30 s run out (before, that slept until a power
+cycle), and a released button is armed again within 10 s.
+
+Reset tag: after any boot that is **not** a wake from deep sleep, the top-left
+corner of the OLED shows `r<esp_reset_reason>` until the first click — `r1`
+power-on (slide switch, RST, or the supply coming back), `r9` brownout, `r4`
+panic, `r5`–`r7` a watchdog, `r3` software restart, `r11` a USB reset (expected
+right after flashing). A button wake shows no tag. It answers "was the chip
+powered?" without a meter, see [Field notes](#field-notes).
 
 ### ESPHome (Home Assistant)
 
@@ -612,6 +624,48 @@ Digits cut off at the top with blank rows below were a placement bug in the plai
 firmware (U8g2's centre mode on a font with a deep descent), not the panel — fixed
 2026-10-11; reflash.
 
+**Dark after a few days, back on a USB plug** (2026-10-18, and repeatedly since;
+plain firmware). The counter sleeps as usual, then neither button wakes it and the
+blue LED doesn't blink. A dataless 5 V charger in the ESP32's own USB-C, slide
+switch ON, brings it back at once with the count kept, and it runs from the cell
+again for days. In October the cell read 4.1 V at `B+`/`B−`. What follows from that:
+
+- **The plug did not wake the chip, it powered it.** A powered ESP32-C3, asleep or
+  hung, cannot react to a dataless plug: there is no VBUS wake source, VBUS is not
+  wired to EN, and with a full cell the 3V3 rail is regulated before and after. So
+  the chip had no usable supply until the plug — the fault sits between the cell
+  and the `5V` pin, where no firmware runs.
+- **The firmware was traced for a path that ends dark and dead** (Arduino-ESP32
+  3.3.12, ESP-IDF 5.5 sources): USB serial writes return at once with no host, every
+  I2C wait is bounded (50 ms), a crash loop would blink. The one way to sleep with no
+  wake source — both buttons down when the 30 s run out — is closed now, but it
+  needs a power cycle to recover, not a plug, so it was not this.
+- **Suspects, not measured yet.** (1) A protection latch: the TP4056 board's DW01
+  (or the cell's own PCM) switches the output off on a short or over-current and
+  keeps it off while a load stays connected; a charger voltage on the output — which
+  a back-fed plug is — releases it. A brief short between the `5V` and `GND` joints
+  on the solder side, against the cell or the TP4056 below, would do it: the same
+  spot as the first build's dark OLED. (2) A joint, crimp or the slide switch that
+  carries the µA of sleep but not the ≈30 mA of a boot.
+
+Next time it is dark, **before** plugging anything in:
+
+1. Meter the Super Mini's `5V` and `3V3` pins against its `GND`. 3.3 V there = the
+   chip is powered, and it is the firmware after all. `5V` far below the cell = walk
+   back: `OUT+`/`OUT−` on the TP4056 board (≈ cell voltage → switch or wiring;
+   low → the protection is open). `B+`/`B−` alone proves little: it is upstream of
+   the DW01 and unloaded.
+2. Without a meter: plug in as before (switch ON, a few seconds are enough) and
+   read the reset tag. Back with `r1` = the chip had lost its supply; `r9` = the
+   supply was sagging under the boot current; **stays dark** = it is powered and
+   asleep or hung, which is the firmware's side (an OFF → ON then brings it back).
+   After an OFF → ON the tag is always `r1` and tells nothing.
+3. Once that is settled, bring it back with the slide switch (OFF for a few
+   seconds, ON: removing the load should release an over-current latch) or with a
+   charger in the **TP4056's** port. The ESP32's port with the switch ON connects
+   the charger straight to the cell, with nothing limiting current or voltage
+   ([Power notes](#power-notes)).
+
 ### Fit tuning
 
 Printers and kits vary; the four fit parameters (and the lid engraving) are
@@ -808,6 +862,15 @@ order they'd bite:
 - **Deep-sleep wake on both buttons** (GPIO3 | GPIO4 mask via
   `esp_deep_sleep_enable_gpio_wakeup`) — compiles on both builds, untested on
   silicon; so is the plain build's GPIO8 blue boot blink.
+- Plain build, added 2026-11-27: the **10 s timer re-check** of a button that is
+  down at sleep time (that the silent boot stays dark, its ≈0.2 s / ≈0.4 mA
+  estimate, a released button waking again within 10 s) and the **reset tag**
+  (`r1` after the slide switch, none after a button wake). The tag's position is
+  from a host render of U8g2 2.36.18: one-digit codes keep ≥ 2 px to the digits at
+  every count 0…99999 with the shipped chart; `r10`–`r15` can touch the first digit
+  in the widest layout (count 26).
+- **The cause of the dark-after-days incidents** ([Field notes](#field-notes)):
+  power path suspected, nothing measured.
 - The ESPHome **`millis() > 1500` wake-press guard** (the press that woke the chip
   is already ON at boot; its release must not count) — margin chosen by reasoning,
   not measured boot time.

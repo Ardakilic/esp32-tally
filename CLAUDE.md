@@ -27,7 +27,8 @@ firmware/plain/                PlatformIO + Arduino 3.3.12 (pioarduino 55.03.312
                                reset) + `struct SaveDelay` (touch/due: one save per burst)
   src/main.cpp                 pins, U8g2 (big digits, brew labels stacked to their right, drawn
                                on a click only), Preferences/NVS (SaveDelay, flush in sleepNow()),
-                               deep sleep, seeded button state, GPIO8 boot blink, serial boot banner
+                               deep sleep (deepSleep(): GPIO mask + RECHECK_US timer for a held pin),
+                               seeded button state, GPIO8 boot blink, reset tag, serial boot banner
   test/tally_logic_test.cpp    assert self-test: state machine, SaveDelay, grind chart (table
                                sanity, match oracle 0..100, max 0 / max 1 cap, one shipped-table
                                spot check), runs in gcc:14 — the committed test
@@ -81,7 +82,7 @@ make case            # image-case, then generate.py + render_docs.py for --mcu r
 make case-verify     # verify.py --mcu esp32-c3, then --mcu rp2040-zero, in one throwaway
                      # container (requirements-dev.txt extras); exit 1 if either fails
 make vendor          # refresh both three.js files in case/vendor/ (bare python:3.14-slim)
-make plain           # pio run -> firmware/plain/build/tally-plain.factory.bin (407 KiB)
+make plain           # pio run -> firmware/plain/build/tally-plain.factory.bin (409 KiB)
 make plain-test      # host self-test, firmware/ at /work, -Isrc -I../common; prints OK
                      # (also covers the RP2040 build's logic: same tally_logic.h)
 make rp2040          # pio run (image-plain + esp32-tally-pio volume, workdir firmware/rp2040)
@@ -100,7 +101,7 @@ make case OMIT_ENGRAVING=1      # appends --omit-engraving (plain lid top)
 Expected results: verify `verify (esp32-c3): 105 checks — ALL PASS` (70 with
 `--snap-bite 0`, 101 with `--omit-engraving`) and `verify (rp2040-zero): 104 checks —
 ALL PASS` (69 / 100; one fewer: its three thin-wall/recess checks become two);
-plain RAM 4.6 % / Flash 25.5 %, factory bin 407 KiB (416640 bytes);
+plain RAM 4.6 % (15204 B) / Flash 25.7 % (336490 B), factory bin 409 KiB (418464 bytes);
 rp2040 RAM 3.9 % (10096 of 262144 B) / Flash 4.2 % (85016 of 2027520 B), firmware.bin
 97048 bytes, uf2 190 KiB (194560 bytes), no warnings;
 ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
@@ -131,10 +132,9 @@ ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
   `/app/firmware/rp2040`; pio fetches the platform per project, ~1 GB on a cold volume).
 - **`tally_logic.h` included from `../plain/src` on purpose** (`-I ../plain/src`), not
   copied: one state machine + SaveDelay for both PlatformIO builds, so `make
-  plain-test` covers the RP2040 logic too. Open PR #7 edits `firmware/plain/src/
-  main.cpp`, `tally_logic.h` and the test, which is why the RP2040 work touched nothing
-  under `firmware/plain/`; after any change there, rebuild `make rp2040` (main.cpp uses
-  `Tally::MAX`, `update()`, `up/down.raw/stable`, `combo`, `last_activity_ms`,
+  plain-test` covers the RP2040 logic too. After any change to `tally_logic.h`, rebuild
+  `make rp2040` (its main.cpp uses `Tally::MAX`, `update()`, `up/down.raw/stable`, `combo`,
+  `last_activity_ms`,
   `SaveDelay` `touch`/`due`/`dirty`). `draw()` is a copy of plain's (marked keep in sync).
 - **LittleFS over EEPROM** for the RP2040 count: one 4-byte `/count` file,
   `filesystem_size = 64k` (the smallest). Copy-on-write: open `"r+"` + write + close
@@ -170,9 +170,9 @@ ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
   (0, 0, 16) is the third byte in GRB and RGB alike, so the colour order can't matter.
 - **U8g2 as the single plain-build dependency**: one lib for SSD1306 128 × 32 over
   hardware I2C plus its fonts — `logisoso28_tn` (count), `6x10_tf` (1–3 brew labels),
-  `5x8_tf` (4 labels); no GFX + BusIO pair. `setBusClock(400000)` before `begin()`: a
-  512-byte frame takes ~13 ms instead of ~50 ms at the 100 kHz default, so the redraw
-  after a click blocks button polling less.
+  `5x8_tf` (4 labels), `4x6_tf` (the plain build's reset tag); no GFX + BusIO pair.
+  `setBusClock(400000)` before `begin()`: a 512-byte frame takes ~13 ms instead of
+  ~50 ms at the 100 kHz default, so the redraw after a click blocks button polling less.
 - **One shared grind-chart header** (`firmware/common/grind_chart.h`: `GRIND_CHART`,
   `GRIND_MAX_LINES`, `grind_matches()`): one place for users to edit the brew table,
   and all three builds plus the host test compile the same file, so they cannot drift.
@@ -288,6 +288,11 @@ ESPHome Flash 51.5 % / RAM 33.1 %, factory bin 987 KB (1011104 bytes).
   9344739): `setFontPosCenter()` + y 16 with `logisoso28_tn`, whose header has
   ascent 28 / descent −7 (glyphs the counter never prints) → baseline 26, digits
   rows −2..25: two rows cut off the top, six blank below — matched Arda's photo.
+  Plain-only reset tag: `r<esp_reset_reason>` in `4x6_tf` at (0, 6), drawn in `setup()`
+  after `draw()` (not inside it: `draw()` stays the copy the RP2040 build keeps in sync),
+  gone at the first redraw. Same host render: `r1`…`r9` ink cols 0..6, rows 1..5, ≥ 2 px
+  from the frame at every count 0…99999 (closest: count 26, digits from col 9);
+  `r10`…`r15` reach col 10 and can touch the first digit there.
 
 ## Design map (case)
 
@@ -466,9 +471,19 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   `millis() > 1500` in both `on_release` lambdas. Plain build: `setup()` seeds
   `tally.up/down.raw/stable` from the pins and sets `tally.combo` if either is
   held, so the wake press's release is swallowed and a stuck-LOW button cannot
-  block boot; `sleepNow()` leaves a LOW pin out of the GPIO wake mask (it would
-  re-wake instantly; IDF pulls up the wake pins itself,
-  `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`). RP2040 build: the same
+  block boot; `deepSleep()` (called by `sleepNow()`) leaves a LOW pin out of the GPIO
+  wake mask (it would re-wake instantly; IDF pulls up the wake pins itself,
+  `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`) and, whenever a pin is left
+  out, also arms `esp_sleep_enable_timer_wakeup(RECHECK_US)` (10 s). `setup()` sends an
+  `ESP_SLEEP_WAKEUP_TIMER` wake straight back into `deepSleep()` after the two
+  `pinMode()`s and a 1 ms settle (an unarmed pin has no pull-up while asleep), before
+  LED/Serial/NVS/OLED: ≈0.2 s per look, ≈0.4 mA average while a button stays down
+  (estimated, unmeasured). So the plain build always has a wake source too; before
+  2026-11-27 both pins LOW at the 30 s mark slept until a power cycle. Why a timer and
+  not the RP2040's wake-on-release: with that sdkconfig IDF gives a HIGH-level wake pin
+  a pull-DOWN, so a released button would never read high. A press that lands inside a
+  timer look is lost and that button stays unarmed until the next look (≤ 10 s);
+  deliberately not handled. RP2040 build: the same
   seeding (every wake is a reboot); instead of dropping a LOW pin it arms it as a
   `LEVEL_HIGH` wake (its release), so there is always a wake source. ESPHome `combo` global
   swallows the releases after a both-held reset; it is cleared when the *other*
@@ -611,6 +626,22 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   the digits) and 400 kHz I2C (both ESP32 builds, untested on hardware; the stacked
   digits-over-label layout was rejected by Arda on 2026-10-11 as cramped), and the
   100 mAh cell needs R_PROG ≥ 12 kΩ (default 1.2 kΩ = 1 A).
+- **Dark-after-days incident, cause open** (2026-10-18, reported again 2026-11-27): the
+  unit sleeps, then no button wakes it and there is no boot blink; a dataless 5 V plug
+  in the ESP32's USB-C with the switch ON revives it, count kept; in October the cell
+  read 4.1 V at B+/B−. A powered C3 cannot react to a dataless plug (no VBUS wake
+  source, VBUS not wired to EN, 3V3 regulated either way), so the chip had no supply:
+  **power path, not firmware** — leading suspects a DW01/PCM latch (a short on the 5V
+  net at the solder side, released by the back-fed charger voltage) or a joint/switch
+  that carries µA but not a boot's ≈30 mA; nothing metered yet. Four firmware passes
+  found no path that fits (HWCDC writes with no host are non-blocking in core 3.3.12,
+  I2C waits are bounded at 50 ms, brownout = software reset via
+  `CONFIG_ESP_BROWNOUT_USE_INTR`, level 7); PRs #5, #6, #7 (I2C timeout, rescue timer,
+  loop WDT + boot log) were closed unmerged. Don't open another firmware fix for this
+  symptom without a meter reading (ESP `5V`/`3V3` vs `GND`, then `OUT+`/`OUT−`) or a
+  reset-tag reading after a plug revival (`r1` supply lost, `r9` sagging; a unit that
+  stays dark on the plug is powered = firmware side) — README → Field notes has the
+  triage. Untested on hardware: the timer re-check and the reset tag.
 - RP2040-Zero variant (added 2026-11-18 on branch `rp2040-zero`): **untested on
   hardware, unprinted** — builds clean, case verify passes. Open: DORMANT entry/exit
   and the ROSC-restart-then-`rp2040.reboot()` path (lock-up risk), level wake on both

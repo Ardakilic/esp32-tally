@@ -10,6 +10,9 @@ constexpr int BTN_UP = 3, BTN_DOWN = 4;
 // Lit only while setup() runs, so a blink on every boot/wake proves the MCU is alive with a dark OLED.
 constexpr int LED_PIN = 8;
 constexpr uint32_t IDLE_SLEEP_MS = 30000;
+// How often a button that was down at sleep time is looked at again. Each look is a boot that goes straight
+// back to sleep (≈0.2 s at ≈20 mA, estimated): ≈0.4 mA on average while a button stays jammed, 0 otherwise.
+constexpr uint64_t RECHECK_US = 10ULL * 1000000;
 #ifndef SAVE_DELAY_MS
 #define SAVE_DELAY_MS 2000  // see platformio.ini build_flags
 #endif
@@ -53,28 +56,54 @@ static void flush() {
   save.dirty = false;
 }
 
-static void sleepNow() {
-  flush();
-  u8g2.setPowerSave(1);
+// Arms the wake sources and sleeps. A pin that is LOW now (held or stuck) would re-wake the chip at once, so
+// it stays out of the GPIO mask and a timer looks at it again instead; setup() sends those timer wakes
+// straight back here. So there is always a wake source: with both pins LOW and no timer the chip would
+// sleep until a power cycle.
+[[noreturn]] static void deepSleep() {
+  constexpr uint64_t BOTH = BIT(BTN_UP) | BIT(BTN_DOWN);
   uint64_t mask = (digitalRead(BTN_UP) ? BIT(BTN_UP) : 0) | (digitalRead(BTN_DOWN) ? BIT(BTN_DOWN) : 0);
-  if (mask) esp_deep_sleep_enable_gpio_wakeup(mask, ESP_GPIO_WAKEUP_GPIO_LOW);  // a held/stuck pin would re-wake instantly
+  if (mask) esp_deep_sleep_enable_gpio_wakeup(mask, ESP_GPIO_WAKEUP_GPIO_LOW);
+  if (mask != BOTH) esp_sleep_enable_timer_wakeup(RECHECK_US);
   esp_deep_sleep_start();
 }
 
+static void sleepNow() {
+  flush();
+  u8g2.setPowerSave(1);
+  deepSleep();
+}
+
 void setup() {
+  pinMode(BTN_UP, INPUT_PULLUP);
+  pinMode(BTN_DOWN, INPUT_PULLUP);
+  // Timer wake = the re-check of a button that was down at sleep time. Nothing to show or save: re-arm from
+  // the pins as they are now and sleep again, before the LED, the serial port, NVS or the OLED are touched.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
+    delay(1);  // a pin that was out of the mask had no pull-up while asleep: let it rise before it is read
+    deepSleep();
+  }
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
   Serial.begin(115200);
   Serial.setTxTimeoutMs(0);  // USB CDC with no host attached must never stall the loop
   Serial.printf("boot reset=%d wake=%d\n", (int)esp_reset_reason(), (int)esp_sleep_get_wakeup_cause());
-  pinMode(BTN_UP, INPUT_PULLUP);
-  pinMode(BTN_DOWN, INPUT_PULLUP);
   prefs.begin("tally");
   tally.count = prefs.getInt("count", 0);
   Serial.printf("count=%ld (restored)\n", (long)tally.count);
   u8g2.setBusClock(400000);  // a full frame takes ~50 ms at the 100 kHz default and would starve button polling
   u8g2.begin();
   draw();
+  // Not a wake from deep sleep (1 power-on, 9 brownout, 4 panic, ...): the reset reason goes in the top-left
+  // corner (4x6: cols 0..6, rows 1..5 for one digit, >= 2 px clear of the digits at every count) until the
+  // first click redraws. After a dark spell that a USB plug ended, r1 means the chip had lost its supply
+  // (battery path, not firmware); no tag means it was powered and asleep.
+  if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
+    u8g2.setFont(u8g2_font_4x6_tf);
+    u8g2.setCursor(0, 6);
+    u8g2.printf("r%d", (int)esp_reset_reason());
+    u8g2.sendBuffer();
+  }
   digitalWrite(LED_PIN, HIGH);
   pinMode(LED_PIN, INPUT);  // the pull-up keeps it off through deep sleep at zero drive
   // Seed instead of waiting for release: a stuck-LOW button must not block boot and drain the cell.
