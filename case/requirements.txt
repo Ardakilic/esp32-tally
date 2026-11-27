@@ -5,7 +5,7 @@
 # the image, regenerate, check the printed bounding boxes/volumes, and commit
 # the regenerated STLs together with this file.
 numpy==2.5.3
-shapely==2.1.2
+shapely==2.2.0
 trimesh==5.1.0
 manifold3d==3.5.3
 mapbox_earcut==2.1.0
