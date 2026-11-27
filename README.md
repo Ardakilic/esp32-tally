@@ -270,9 +270,13 @@ Result: RAM 4.6 % (15.2 KB), Flash 25.7 %, merged image 409 KiB. The
 boot_app0 @0xe000, app @0x10000) — flash it at offset 0. No OTA: reflashing means
 opening the lid.
 
-Liveness check: the Super Mini's **blue LED** (GPIO8) blinks ≈0.3 s on every boot
-and wake, so a blink with a dark OLED means the MCU runs and the display (or its
-wiring) is the problem. The USB serial port (115200) prints
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:c030a4a4101a1c1920d2924fe075be21fc7ddeea8d1c6fd1bfdeb5e129b6e461 -->
+
+Liveness check: the Super Mini's **blue LED** (GPIO8) blinks ≈0.3 s on power-up
+and button wake. A blink shows that setup ran even if the OLED stays dark.
+The USB serial port (115200) prints
 `boot reset=<esp_reset_reason> wake=<esp_sleep_wakeup_cause>` and the restored
 count at boot, then `count=N` per click. A button stuck low (solder bridge, jammed
 cap) cannot hold the chip awake: `setup()` seeds the button state instead of
@@ -284,12 +288,20 @@ while the button stays down — estimated). So there is always a wake source, al
 with both buttons down when the 30 s run out (before, that slept until a power
 cycle), and a released button is armed again within 10 s.
 
+<!-- /coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:c453e66ee9cf76f02b3608aeaecf02760340ba127d7cae29f1ca64a9c23bb54b -->
+
 Reset tag: after any boot that is **not** a wake from deep sleep, the top-left
 corner of the OLED shows `r<esp_reset_reason>` until the first click — `r1`
 power-on (slide switch, RST, or the supply coming back), `r9` brownout, `r4`
 panic, `r5`–`r7` a watchdog, `r3` software restart, `r11` a USB reset (expected
-right after flashing). A button wake shows no tag. It answers "was the chip
-powered?" without a meter, see [Field notes](#field-notes).
+right after flashing). A button wake shows no tag. Use the
+[Field notes](#field-notes) to diagnose a dark OLED.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ### ESPHome (Home Assistant)
 
@@ -611,15 +623,18 @@ instead of a wall slot. Two clearances the self-test doesn't model:
 
 ### Field notes
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:ae92bc7afb7d24c40ce35925ed0cfc84f082da12cd9d633020a53b33b3187f44 -->
+
 First build, 2026-10-10: with the TP4056 and cell hot-glued under the board the
 OLED stayed dark until the glue came off — contact through the header stubs and
-joint stress, not EMI; hence steps 5–6. Dark-display triage, in order: press
-**RST**; the serial port appears (`ls /dev/cu.usbmodem*`) and vanishes after 30 s
-(deep sleep); [web.esphome.io](https://web.esphome.io) → **Logs** shows `count=N`
-per click; the blue GPIO8 blink on boot = MCU alive; then meter the OLED header
-(VCC 3.3 V, SDA/SCL idle at 3.3 V) and reflow. A deep-sleeping ESP32-C3 does
-**not** wake when USB is plugged in — only a button or RST does — and with the
-slide switch ON a USB plug back-feeds the cell ([Power notes](#power-notes)).
+joint stress, not EMI; hence steps 5–6. Use the diagnostic steps below if the
+OLED stays dark. A deep-sleeping ESP32-C3 does **not** wake when USB is plugged
+in. With the slide switch ON, a plug in the ESP32 port back-feeds the cell
+([Power notes](#power-notes)).
+
+<!-- /coderabbit-ai-generated:v1 -->
 Digits cut off at the top with blank rows below were a placement bug in the plain
 firmware (U8g2's centre mode on a font with a deep descent), not the panel — fixed
 2026-10-11; reflash.
@@ -630,11 +645,13 @@ blue LED doesn't blink. A dataless 5 V charger in the ESP32's own USB-C, slide
 switch ON, brings it back at once with the count kept, and it runs from the cell
 again for days. In October the cell read 4.1 V at `B+`/`B−`. What follows from that:
 
-- **The plug did not wake the chip, it powered it.** A powered ESP32-C3, asleep or
-  hung, cannot react to a dataless plug: there is no VBUS wake source, VBUS is not
-  wired to EN, and with a full cell the 3V3 rail is regulated before and after. So
-  the chip had no usable supply until the plug — the fault sits between the cell
-  and the `5V` pin, where no firmware runs.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:ed7e241541d66dc8d8ffe6da45b5602bc30dbca0b1eba32757d21bc55e00a4b9 -->
+
+- **That observation points to a supply problem.** There is no VBUS wake source,
+  VBUS is not wired to EN, and with a full cell the 3V3 rail is regulated before
+  and after. The rails were not measured during the fault.
 - **The firmware was traced for a path that ends dark and dead** (Arduino-ESP32
   3.3.12, ESP-IDF 5.5 sources): USB serial writes return at once with no host, every
   I2C wait is bounded (50 ms), a crash loop would blink. The one way to sleep with no
@@ -648,23 +665,39 @@ again for days. In October the cell read 4.1 V at `B+`/`B−`. What follows from
   spot as the first build's dark OLED. (2) A joint, crimp or the slide switch that
   carries the µA of sleep but not the ≈30 mA of a boot.
 
-Next time it is dark, **before** plugging anything in:
+<!-- /coderabbit-ai-generated:v1 -->
 
-1. Meter the Super Mini's `5V` and `3V3` pins against its `GND`. 3.3 V there = the
-   chip is powered, and it is the firmware after all. `5V` far below the cell = walk
-   back: `OUT+`/`OUT−` on the TP4056 board (≈ cell voltage → switch or wiring;
-   low → the protection is open). `B+`/`B−` alone proves little: it is upstream of
-   the DW01 and unloaded.
-2. Without a meter: plug in as before (switch ON, a few seconds are enough) and
-   read the reset tag. Back with `r1` = the chip had lost its supply; `r9` = the
-   supply was sagging under the boot current; **stays dark** = it is powered and
-   asleep or hung, which is the firmware's side (an OFF → ON then brings it back).
-   After an OFF → ON the tag is always `r1` and tells nothing.
-3. Once that is settled, bring it back with the slide switch (OFF for a few
-   seconds, ON: removing the load should release an over-current latch) or with a
-   charger in the **TP4056's** port. The ESP32's port with the switch ON connects
-   the charger straight to the cell, with nothing limiting current or voltage
-   ([Power notes](#power-notes)).
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:386072371fcd2926ba4ae1f9ba8deb5c8e9a829df136ddbaf015e76cc068a3b0 -->
+
+A dark OLED alone does not identify the cause. Check in this order:
+
+1. With the fault present, before plugging anything in or cycling the switch,
+   meter the Super Mini's `5V` and `3V3` pins against its `GND`. If `5V` is low
+   relative to the cell, check `OUT+`/`OUT−` on the TP4056 board. Output near cell
+   voltage points to the switch or wiring; low output with normal cell voltage
+   suggests the protection has opened. `B+`/`B−` alone only shows cell voltage
+   upstream of the protection. A normal `3V3` reading confirms voltage at the pin
+   at the time of the measurement.
+2. Try a button wake on battery and watch for the blue GPIO8 boot blink. For a
+   separate serial check, turn the slide switch **OFF** before connecting the
+   ESP32's USB-C. Open a 115200-baud monitor and press **RST** if needed to capture
+   `boot reset=`. A blink or banner shows that boot reached setup before OLED
+   initialization. The banner describes that boot; a USB-powered restart cannot
+   tell you what happened on battery. If you see neither a blink nor a banner,
+   the diagnosis remains open.
+3. If boot activity is present but the OLED stays dark, measure OLED VCC against
+   OLED GND (about 3.3 V) and check that SDA and SCL idle near 3.3 V. Note which
+   power source was in use and inspect the display wiring and solder joints.
+
+**Without a meter:** Use the rail measurements in step 1 when a meter is
+available to diagnose the battery power path. To recover, charge through the
+**TP4056's USB-C** with the slide switch **OFF**, then unplug the charger and
+try the counter on battery again. Keep the switch OFF whenever the ESP32's own
+USB-C is connected ([Power notes](#power-notes)).
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ### Fit tuning
 

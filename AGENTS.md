@@ -9,6 +9,10 @@ Instructions for AI coding agents working in this repo live in
   `case/preview.html`, `index.html`, `case/vendor/*` or any build output by hand.
   All builds run in Docker via `make` — nothing is installed on the host, no
   local venv/pio. GitHub Pages publishes the checkout as-is on push to `main`.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:a3e684ce3c6334093460d2b1645d088370de9fb888173b37c86720d9ded119b5 -->
+
 - Three firmwares, one behaviour contract:
   - `firmware/plain/` (PlatformIO, pioarduino, U8g2) and
     `firmware/esphome/tally.yaml` (ESPHome 2026.9.1, esp-idf) on the ESP32-C3 Super
@@ -22,12 +26,13 @@ Instructions for AI coding agents working in this repo live in
     is down at sleep time with a 10 s timer (`deepSleep()`), ESPHome waits for UP
     (`KEEP_AWAKE`), the RP2040 wakes on its release. Plain only: `r<reset reason>` in
     the OLED's top-left corner after any boot that is not a deep-sleep wake.
-  - A unit that goes dark and comes back when USB is plugged into the ESP32 (switch
-    ON) had lost its supply — power path, not firmware. Read CLAUDE.md → User context
-    before touching the sleep code for it.
+  - A dark OLED alone is inconclusive. For ESP32 troubleshooting and recovery,
+    follow [README → Field notes](README.md#field-notes).
   - Both modules' `5V` pin is USB VBUS — the ESP32 case hides that port on purpose
     (don't "fix" it); the RP2040-Zero case leaves it in an open end window because
     no wall fits in front of it.
+
+<!-- /coderabbit-ai-generated:v1 -->
 - The RP2040-Zero sits on the same perfboard holes (cols 3 and 9, rows 0…8) but its
   pinout is mirrored: 5V/GND/3V3 are on col 9. The case variant is `--mcu
   rp2040-zero` (an `MCUS` table in `case/generate.py`; base + lid only, caps shared).

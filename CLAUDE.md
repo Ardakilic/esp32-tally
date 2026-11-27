@@ -489,12 +489,17 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   swallows the releases after a both-held reset; it is cleared when the *other*
   button is already up.
 - `wifi`/`api` `reboot_timeout: 0s`: never reboot for lack of network.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:d0b16cef5dddf46abae96a03bd7d54958118319cabb4125cfafedc9c1427b256 -->
+
 - Plain build: `Serial.setTxTimeoutMs(0)` — USB CDC with no host must not stall
   the loop. Boot prints `boot reset=<esp_reset_reason> wake=<wakeup cause>` and
   the restored count. GPIO8 (`LED_PIN`, blue LED, active-LOW, 10 k pull-up,
   strapping pin) is driven LOW for the length of `setup()` (≈0.3 s, mostly U8g2's
-  2 × 100 ms + 100 ms SSD1306 reset delays) then returned to INPUT — a blink with
-  a dark OLED means MCU alive, display dead. One save rule, all three
+  2 × 100 ms + 100 ms SSD1306 reset delays) then returned to INPUT. The blink and
+  banner are evidence that setup ran; a dark OLED alone is inconclusive. One
+  save rule, all three
   firmwares: every click restarts a 2 s timer, gaps under 2 s never write, the pause
   after the last click writes the final count once (one write per burst); sleep
   flushes a pending count first; a power cut during a burst or within 2 s of the last
@@ -518,6 +523,8 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   **on purpose** (CodeRabbit asked for "no sleep while unsaved"): awake on a broken FS the cell
   reaches the DW01 cut-off in days and the power loss clears scratch too, so staying up loses
   the count as well, plus the device; DORMANT keeps the stash for as long as the cell lasts.
+
+<!-- /coderabbit-ai-generated:v1 -->
 - **I2C 400 kHz** on all three builds: plain and RP2040 `setBusClock`, ESPHome
   `i2c: frequency: 400kHz` (default 50 kHz ≈ 90 ms/frame), so a click's redraw blocks
   the loop less. OLED misbehaving at 400 kHz on esp-idf → try `i2c: timeout: 10ms`
@@ -626,22 +633,30 @@ notch, (ESP_X + SKIRT_NOTCH_W/2 + OPEN_W/2)/2.
   the digits) and 400 kHz I2C (both ESP32 builds, untested on hardware; the stacked
   digits-over-label layout was rejected by Arda on 2026-10-11 as cramped), and the
   100 mAh cell needs R_PROG ≥ 12 kΩ (default 1.2 kΩ = 1 A).
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:8d5f01d8140bf9ad38e0d562695f3762842ee7933e4f33acef0af190ea4cdc35 -->
+
 - **Dark-after-days incident, cause open** (2026-10-18, reported again 2026-11-27): the
   unit sleeps, then no button wakes it and there is no boot blink; a dataless 5 V plug
   in the ESP32's USB-C with the switch ON revives it, count kept; in October the cell
-  read 4.1 V at B+/B−. A powered C3 cannot react to a dataless plug (no VBUS wake
-  source, VBUS not wired to EN, 3V3 regulated either way), so the chip had no supply:
-  **power path, not firmware** — leading suspects a DW01/PCM latch (a short on the 5V
-  net at the solder side, released by the back-fed charger voltage) or a joint/switch
-  that carries µA but not a boot's ≈30 mA; nothing metered yet. Four firmware passes
-  found no path that fits (HWCDC writes with no host are non-blocking in core 3.3.12,
-  I2C waits are bounded at 50 ms, brownout = software reset via
-  `CONFIG_ESP_BROWNOUT_USE_INTR`, level 7); PRs #5, #6, #7 (I2C timeout, rescue timer,
-  loop WDT + boot log) were closed unmerged. Don't open another firmware fix for this
-  symptom without a meter reading (ESP `5V`/`3V3` vs `GND`, then `OUT+`/`OUT−`) or a
-  reset-tag reading after a plug revival (`r1` supply lost, `r9` sagging; a unit that
-  stays dark on the plug is powered = firmware side) — README → Field notes has the
-  triage. Untested on hardware: the timer re-check and the reset tag.
+  read 4.1 V at B+/B−. That observation points to a supply problem.
+  Leading suspects are a DW01/PCM latch or a joint/switch that carries sleep
+  current but not boot current; the rails were not measured during the fault.
+  Four firmware passes found no path that fits (HWCDC writes with no host are
+  non-blocking in core 3.3.12, I2C waits are bounded at 50 ms, brownout = software
+  reset via `CONFIG_ESP_BROWNOUT_USE_INTR`, level 7); PRs #5, #6, #7
+  (I2C timeout, rescue timer, loop WDT + boot log) were closed unmerged.
+  Follow [README → Field notes](README.md#field-notes) before assigning a cause:
+  (1) measure ESP `5V` and `3V3` vs `GND` while the fault is present, then
+  TP4056 `OUT+`/`OUT−` if the input is low; (2) watch for the blue boot blink
+  on battery and check `boot reset=` in a separate serial session. Turn the
+  switch OFF before connecting ESP32 USB; (3) if boot activity is present and the OLED
+  stays dark, check OLED VCC vs GND and idle SDA/SCL. The serial banner describes
+  the boot it was captured on. For recovery, use the TP4056 USB-C with the switch
+  OFF. Untested on hardware: the timer re-check and the reset tag.
+
+<!-- /coderabbit-ai-generated:v1 -->
 - RP2040-Zero variant (added 2026-11-18 on branch `rp2040-zero`): **untested on
   hardware, unprinted** — builds clean, case verify passes. Open: DORMANT entry/exit
   and the ROSC-restart-then-`rp2040.reboot()` path (lock-up risk), level wake on both
